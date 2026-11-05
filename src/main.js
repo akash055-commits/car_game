@@ -109,7 +109,8 @@ async function init() {
   ui.showScreen('menu');
 
   // ---------------------------------------------------------------- loop
-  const clock = new THREE.Clock();
+  const timer = new THREE.Timer();
+  timer.connect(document);
   let acc = 0;
   let elapsed = 0;
   let fpsFrames = 0, fpsTime = 0, fps = 60;
@@ -117,7 +118,8 @@ async function init() {
 
   function frame() {
     requestAnimationFrame(frame);
-    const dt = Math.min(clock.getDelta(), 0.1);
+    timer.update();
+    const dt = Math.min(timer.getDelta(), 0.1);
     elapsed += dt;
     fpsFrames++; fpsTime += dt;
     if (fpsTime > 0.5) { fps = Math.round(fpsFrames / fpsTime); fpsFrames = 0; fpsTime = 0; }
@@ -177,7 +179,7 @@ async function init() {
   frame();
 
   // expose for debugging / automated tests
-  window.__game = { game, car, world, env, physics, audio, input, rig };
+  window.__game = { game, car, world, env, physics, audio, input, rig, effects, ui };
 }
 
 init().catch((err) => {

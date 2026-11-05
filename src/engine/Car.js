@@ -208,9 +208,10 @@ export class Car {
     const ratio = this.reverse ? REVERSE_RATIO : GEARS[this.gear - 1];
     const wheelRpm = (Math.abs(this.forwardSpeed) / (2 * Math.PI * CAR_DIMS.wheelRadius)) * 60;
     let targetRpm = Math.max(IDLE_RPM, wheelRpm * ratio * FINAL_DRIVE);
-    const clutchSlip = (this.gear === 1 || this.reverse) && Math.abs(this.forwardSpeed) < 7;
+    // Clutch engagement: blend from launch revs to wheel-locked revs as speed builds
+    const clutchSlip = (this.gear === 1 || this.reverse) && Math.abs(this.forwardSpeed) < 9;
     if (this.frozen || contacts < 2) targetRpm = IDLE_RPM + this.throttleSmoothed * (REDLINE - IDLE_RPM) * 0.92;
-    else if (clutchSlip) targetRpm = Math.max(targetRpm, IDLE_RPM + drive * 3600);
+    else if (clutchSlip) targetRpm = Math.max(targetRpm, lerp(IDLE_RPM + drive * 3400, targetRpm, Math.abs(this.forwardSpeed) / 9));
     this.rpm = damp(this.rpm, targetRpm, this.frozen ? 6 : 14, dt);
     let limiter = false;
     if (this.rpm > REDLINE) { this.rpm = REDLINE - 250; limiter = true; this.events.push('limiter'); }
@@ -272,7 +273,7 @@ export class Car {
     vc.setWheelFrictionSlip(3, rearGrip);
 
     // Speed-sensitive steering with a touch of counter-steer assist
-    const maxSteer = lerp(0.6, 0.13, clamp(absSpeed / 42, 0, 1));
+    const maxSteer = lerp(0.58, 0.1, clamp(absSpeed / 38, 0, 1));
     this.slipAngle = absSpeed > 2 ? Math.atan2(this.lateralSpeed, Math.abs(this.forwardSpeed)) : 0;
     let target = inp.steer * maxSteer;
     if (absSpeed > 6 && !this.reverse) target += clamp(-this.slipAngle * 0.35, -0.2, 0.2) * (1 - Math.abs(inp.steer) * 0.5);
@@ -307,12 +308,12 @@ export class Car {
 
     // Per-wheel skid amount for smoke, skid marks and tyre squeal
     const lat = Math.abs(this.lateralSpeed);
-    const spinning = drive > 0.85 && this.gear === 1 && absSpeed < 9 && !this.reverse && !this.frozen;
+    const spinning = drive > 0.85 && this.gear === 1 && absSpeed < 4.5 && !this.reverse && !this.frozen;
     for (let i = 0; i < 4; i++) {
       let s = clamp((lat - 2.2) / 5, 0, 1);
       if (i >= 2) {
         if (hb && absSpeed > 3) s = Math.max(s, clamp(absSpeed / 15, 0.4, 1));
-        if (spinning) s = Math.max(s, 0.85);
+        if (spinning) s = Math.max(s, 0.55);
       }
       if (brake > 0.9 && absSpeed > 18) s = Math.max(s, 0.35);
       this.skid[i] = this.wheelContact[i] ? s : 0;
@@ -377,7 +378,7 @@ export class Car {
     // Lights
     const m = this.model.materials;
     const braking = (this.reverse ? this.input.throttle : this.input.brake) > 0.1 || this.frozen;
-    m.taillight.emissiveIntensity = braking ? 9 : (this.lightsOn ? 2.2 : 0.5);
+    m.taillight.emissiveIntensity = braking ? 3.2 : (this.lightsOn ? 1.6 : 0.35);
     m.reverse.emissiveIntensity = this.reverse && this.input.brake > 0.1 ? 6 : 0;
 
     // Nitro flames & backfire

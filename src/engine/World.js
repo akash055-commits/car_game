@@ -68,7 +68,7 @@ export class World {
     this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 0.55;
@@ -198,7 +198,7 @@ export class World {
     this.composer.setSize(w, h);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
     if (this.quality.bloom) {
-      this.bloom = new UnrealBloomPass(new THREE.Vector2(w / 2, h / 2), 0.5, 0.45, 0.95);
+      this.bloom = new UnrealBloomPass(new THREE.Vector2(w / 2, h / 2), 0.45, 0.4, 1.5);
       this.composer.addPass(this.bloom);
     } else this.bloom = null;
     this.speedPass = new ShaderPass(SpeedFXShader);

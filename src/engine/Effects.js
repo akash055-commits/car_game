@@ -220,12 +220,12 @@ export class Effects {
       const cp = car.contactPoints[i];
       if (car.wheelContact[i] && s > 0.12) {
         this.skids.add(i, cp, right, Math.min(1, s * 1.2));
-        this.acc[i] += dt * (25 + 70 * s);
+        this.acc[i] += dt * (8 + 45 * s);
         while (this.acc[i] > 1) {
           this.acc[i] -= 1;
           _p.set(cp.x + (Math.random() - 0.5) * 0.4, cp.y + 0.25, cp.z + (Math.random() - 0.5) * 0.4);
           _v.set(car.velocity.x * 0.15 + (Math.random() - 0.5) * 1.5, 0.6 + Math.random() * 1.2, car.velocity.z * 0.15 + (Math.random() - 0.5) * 1.5);
-          this.smoke.spawn(_p, _v, { color: this.smokeColor, size: 0.9 + Math.random() * 0.6, life: 1.6 + Math.random() * 1.2, grow: 2.6, drag: 1.4, gravity: -0.35, alpha: 0.32 * s + 0.08 });
+          this.smoke.spawn(_p, _v, { color: this.smokeColor, size: 0.7 + Math.random() * 0.5, life: 1.3 + Math.random() * 1.0, grow: 2.2, drag: 1.4, gravity: -0.35, alpha: 0.16 * s + 0.04 });
         }
       } else {
         this.skids.lift(i);

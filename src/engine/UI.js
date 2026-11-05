@@ -32,11 +32,10 @@ const html = /* html */`
       <path id="tach-red" class="g-red" d=""/>
       <path id="tach-fill" class="g-fill" d="" filter="url(#glow)"/>
       <g id="tach-ticks"></g>
-      <line id="needle" x1="110" y1="110" x2="110" y2="30" class="g-needle"/>
-      <circle cx="110" cy="110" r="7" class="g-hub"/>
-      <text x="110" y="132" class="g-speed" id="g-speed">0</text>
-      <text x="110" y="150" class="g-unit">KM/H</text>
-      <text x="110" y="182" class="g-gear" id="g-gear">N</text>
+      <line id="needle" x1="110" y1="64" x2="110" y2="26" class="g-needle"/>
+      <text x="110" y="124" class="g-speed" id="g-speed">0</text>
+      <text x="110" y="142" class="g-unit">KM/H</text>
+      <text x="110" y="180" class="g-gear" id="g-gear">N</text>
     </svg>
     <div class="nitro"><div class="nitro-lbl">NITRO</div><div class="nitro-bar"><div id="nitro-fill"></div></div></div>
   </div>
@@ -108,7 +107,7 @@ const html = /* html */`
     <h2>PAUSED</h2>
     <button class="btn primary" data-action="resume">RESUME</button>
     <button class="btn" data-action="restart">RESTART</button>
-    <button class="btn" data-action="camera">CAMERA: <span id="cam-name">Chase</span></button>
+    <button class="btn" data-action="camera"><span>CAMERA: <span id="cam-name">Chase</span></span></button>
     <button class="btn" data-action="quit">MAIN MENU</button>
   </div>
 </div>
