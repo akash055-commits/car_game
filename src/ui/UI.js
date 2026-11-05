@@ -23,6 +23,11 @@ export const ICONS = {
   close: svg('<path d="M6 6l12 12M18 6L6 18"/>'),
 }
 
+// When the game is published inside a website (e.g. /games/seasons-valley/), offer a way home
+const HOME_LINK = typeof location !== 'undefined' && location.pathname.includes('/games/')
+  ? `<a class="home-link" href="/">← Back to portfolio</a>`
+  : ''
+
 const LOGO = `<svg class="brand-mark" viewBox="0 0 80 80" aria-hidden="true">
   <circle cx="40" cy="40" r="38" fill="#fff8ee"/>
   <path d="M10 52c8-6 14-8 22-5s14 2 20-3 12-6 18-2v10c0 10-12 18-30 18S10 62 10 52z" fill="#e8742c"/>
@@ -71,6 +76,7 @@ export class UI {
                <span><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> seasons</span><span><kbd>N</kbd> night</span>`}
         </div>
         <div class="credits">Best with sound on · Music: “Sudo”, “Boy”, “Baguira” (CC0) via Bruno Simon</div>
+        ${HOME_LINK}
       </div>`
     this.root.appendChild(el)
     this.loader = el
@@ -271,6 +277,7 @@ export class UI {
     wrap.innerHTML = `
       <div class="panel modal" role="dialog" aria-label="Settings">
         <h2>Settings <button class="icon-btn" data-close aria-label="Close">${ICONS.close}</button></h2>
+        ${HOME_LINK ? `<div class="home-row">${HOME_LINK}</div>` : ''}
         <h3>Sound</h3>
         <label class="row">Master<input type="range" min="0" max="1" step="0.01" value="${s.master}" data-vol="master"><output>${pct(s.master)}</output></label>
         <label class="row">Music<input type="range" min="0" max="1" step="0.01" value="${s.music}" data-vol="music"><output>${pct(s.music)}</output></label>
