@@ -34,6 +34,9 @@ export class CameraRig {
     this.pitch = 0.18
     this.thirdDist = 3.6
     this.lastLook = -10
+    this.lift = 0 // extra diorama elevation while a building is in the way
+    this.liftTarget = 0
+    this.liftTimer = 0
     this.time = 0
 
     let dragging = false, lastX = 0, lastY = 0
@@ -112,17 +115,25 @@ export class CameraRig {
   }
 
   // Shorten a camera boom if something solid is between the pivot and the camera
-  collide(pivot, desired, exclude) {
-    if (!this.physics) return desired
-    const dir = _v.copy(desired).sub(pivot)
+  // Pull the camera in front of whatever blocks the line from the pivot (buildingsOnly:
+  // ignore lamps, trees and props so the high camera doesn't twitch past them)
+  collide(pivot, desired, exclude, buildingsOnly = false) {
+    const hit = this.blocker(pivot, desired, exclude, buildingsOnly)
+    if (!hit) return desired
+    const d = Math.max(0.6, hit.toi - 0.35)
+    return pivot.clone().addScaledVector(hit.dir, d)
+  }
+
+  blocker(pivot, desired, exclude, buildingsOnly = false) {
+    if (!this.physics) return null
+    const dir = new THREE.Vector3().copy(desired).sub(pivot)
     const len = dir.length()
-    if (len < 0.01) return desired
+    if (len < 0.01) return null
     dir.divideScalar(len)
     const ray = new this.physics.RAPIER.Ray({ x: pivot.x, y: pivot.y, z: pivot.z }, { x: dir.x, y: dir.y, z: dir.z })
-    const hit = this.physics.world.castRay(ray, len, true, undefined, undefined, undefined, exclude)
-    if (!hit) return desired
-    const d = Math.max(0.6, hit.timeOfImpact - 0.35)
-    return pivot.clone().addScaledVector(dir, d)
+    const pred = buildingsOnly ? (col) => this.physics.getTag(col.handle)?.kind === 'building' : undefined
+    const hit = this.physics.world.castRay(ray, len, true, undefined, undefined, undefined, exclude, pred)
+    return hit ? { toi: hit.timeOfImpact, dir } : null
   }
 
   // target: { pos, quat, vel, speed, boosting, body, heading }
@@ -159,11 +170,25 @@ export class CameraRig {
     let desired, lookAt, fov, stiff = 9
     if (mode === 'diorama') {
       const d = this.distance * (1 + clamp(speed / 30, 0, 1) * 0.12) * (this.kind === 'heli' ? 1.35 : 1)
-      desired = new THREE.Vector3(
-        this.focus.x + Math.cos(this.azimuth) * Math.cos(this.elevation) * d,
-        this.focus.y + Math.sin(this.elevation) * d,
-        this.focus.z + Math.sin(this.azimuth) * Math.cos(this.elevation) * d,
+      const at = (el) => new THREE.Vector3(
+        this.focus.x + Math.cos(this.azimuth) * Math.cos(el) * d,
+        this.focus.y + Math.sin(el) * d,
+        this.focus.z + Math.sin(this.azimuth) * Math.cos(el) * d,
       )
+      // A tall building in the way? Tilt towards top-down until the view clears.
+      const pivot = new THREE.Vector3(this.focus.x, this.focus.y + 1.2, this.focus.z)
+      this.liftTimer -= dt
+      if (this.liftTimer <= 0) {
+        this.liftTimer = 0.12
+        let extra = 0
+        for (const e of [0, 0.2, 0.4, 0.62]) {
+          extra = e
+          if (this.elevation + e > 1.42 || !this.blocker(pivot, at(this.elevation + e), target.body, true)) break
+        }
+        this.liftTarget = Math.min(extra, 1.42 - this.elevation)
+      }
+      this.lift = damp(this.lift, this.liftTarget, 3.5, dt)
+      desired = this.collide(pivot, at(this.elevation + this.lift), target.body, true)
       lookAt = this.focus.clone()
       fov = 32 + (target.boosting ? 4 : 0)
     } else if (mode === 'third') {
