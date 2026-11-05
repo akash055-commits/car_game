@@ -2,6 +2,8 @@
 
 A cozy, physics-driven 3D driving game in the browser. Cruise a little off-road buggy around a valley circuit, switch between **Autumn**, **Spring** and **Monsoon** at any time, drive into the night, hunt for 25 glowing embers and chase your best lap.
 
+**Play it live: [www.akashm.site/games/seasons-valley](https://www.akashm.site/games/seasons-valley/)**
+
 Built with [three.js](https://threejs.org), [Rapier](https://rapier.rs) physics and the Web Audio API.
 
 ## Run it
@@ -11,6 +13,10 @@ npm install
 npm run dev      # http://localhost:5173
 npm run build    # static build in dist/ (works from any folder)
 ```
+
+### Publishing to the portfolio site
+
+The live copy lives in [akash055-commits.github.io](https://github.com/akash055-commits/akash055-commits.github.io) under `games/seasons-valley/`. After `npm run build`, replace that folder with the contents of `dist/` and push the site's `main` branch.
 
 ## Controls
 
