@@ -15,14 +15,14 @@ export const QUALITY = {
 
 export const TIME_PRESETS = {
   day: {
-    elevation: 42, azimuth: 150, turbidity: 4, rayleigh: 1.2, mie: 0.004, mieG: 0.8, clouds: 0.45,
-    sun: 3.0, sunColor: 0xfff0dd, hemi: 0.9, hemiSky: 0xbfd8ff, hemiGround: 0x4b5a35,
-    fog: 0xc4d7ea, fogDensity: 0.0016, exposure: 0.55, env: 0.75, lights: false, stars: false,
+    elevation: 48, azimuth: 150, turbidity: 2.2, rayleigh: 0.9, mie: 0.003, mieG: 0.78, clouds: 0.4,
+    sun: 3.6, sunColor: 0xfff3e2, hemi: 0.65, hemiSky: 0xa8ccff, hemiGround: 0x3d5a2a,
+    fog: 0x9fc2e8, fogDensity: 0.0007, exposure: 0.5, env: 0.4, lights: false, stars: false,
   },
   sunset: {
     elevation: 5, azimuth: 255, turbidity: 9, rayleigh: 2.6, mie: 0.006, mieG: 0.88, clouds: 0.55,
     sun: 2.6, sunColor: 0xffa565, hemi: 0.55, hemiSky: 0xffb48e, hemiGround: 0x3b2a2c,
-    fog: 0xdc9c7e, fogDensity: 0.0021, exposure: 0.42, env: 0.65, lights: true, stars: false,
+    fog: 0xdc9c7e, fogDensity: 0.0012, exposure: 0.42, env: 0.45, lights: true, stars: false,
   },
   night: {
     elevation: -8, azimuth: 200, turbidity: 2, rayleigh: 0.4, mie: 0.002, mieG: 0.7, clouds: 0.25,
@@ -32,7 +32,7 @@ export const TIME_PRESETS = {
 };
 
 const SpeedFXShader = {
-  uniforms: { tDiffuse: { value: null }, amount: { value: 0 }, vignette: { value: 0.35 } },
+  uniforms: { tDiffuse: { value: null }, amount: { value: 0 }, vignette: { value: 0.28 } },
   vertexShader: /* glsl */`
     varying vec2 vUv;
     void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
@@ -55,6 +55,10 @@ const SpeedFXShader = {
       col.b = mix(col.b, texture2D(tDiffuse, vUv - c * ca).b, 0.6);
       float v = smoothstep(0.95, 0.3, d * (1.0 + amount * 0.25));
       col *= mix(1.0 - vignette, 1.0, v);
+      // colour grade: richer saturation + gentle contrast for a crisp, vibrant image
+      float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
+      col = max(mix(vec3(l), col, 1.32), 0.0);
+      col = col * col * 0.18 + col * 0.86;
       gl_FragColor = vec4(col, 1.0);
     }`,
 };
@@ -198,7 +202,7 @@ export class World {
     this.composer.setSize(w, h);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
     if (this.quality.bloom) {
-      this.bloom = new UnrealBloomPass(new THREE.Vector2(w / 2, h / 2), 0.35, 0.4, 1.6);
+      this.bloom = new UnrealBloomPass(new THREE.Vector2(w / 2, h / 2), 0.22, 0.35, 2.4);
       this.composer.addPass(this.bloom);
     } else this.bloom = null;
     this.speedPass = new ShaderPass(SpeedFXShader);

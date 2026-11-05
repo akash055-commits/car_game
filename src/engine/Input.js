@@ -10,6 +10,7 @@ export class Input {
     this.usingGamepad = false;
     this.prevPadButtons = [];
     this.steerSmoothed = 0;
+    this.sensitivity = 1.2;
 
     window.addEventListener('keydown', (e) => {
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
@@ -48,7 +49,8 @@ export class Input {
     let nitro = k.has('ShiftLeft') || k.has('ShiftRight') || t.nitro;
 
     // Digital steering is ramped so it feels analog and never twitchy
-    const rate = steerTarget === 0 ? 7 : (Math.sign(steerTarget) !== Math.sign(this.steerSmoothed) ? 9 : 4.5);
+    const sens = this.sensitivity;
+    const rate = (steerTarget === 0 ? 10 : (Math.sign(steerTarget) !== Math.sign(this.steerSmoothed) ? 13 : 6.5)) * sens;
     this.steerSmoothed = damp(this.steerSmoothed, steerTarget, rate, dt);
     let steer = this.steerSmoothed;
 

@@ -1,6 +1,6 @@
 import { formatTime, clamp } from './utils.js';
 
-const CAR_COLORS = ['#d01818', '#ff6d00', '#ffd600', '#00c853', '#00b0ff', '#2962ff', '#aa00ff', '#f5f5f5', '#212121', '#90a4ae'];
+const CAR_COLORS = ['#e00000', '#ff5a00', '#ffd000', '#00d26a', '#00c8ff', '#0066ff', '#9b30ff', '#ff2d95', '#f7f7f7', '#141414'];
 
 const html = /* html */`
 <div id="hud" class="hidden">
@@ -68,7 +68,7 @@ const html = /* html */`
     <h2>GARAGE</h2>
     <p class="muted">Pick a paint finish</p>
     <div class="swatches">${CAR_COLORS.map((c) => `<button class="swatch" data-color="${c}" style="--c:${c}"></button>`).join('')}</div>
-    <label class="row-set">Racing stripes <input type="checkbox" id="opt-stripes" checked></label>
+    <label class="row-set">Racing stripes <input type="checkbox" id="opt-stripes"></label>
     <button class="btn" data-action="back">BACK</button>
   </div>
   <div class="menu-panel glass sub hidden" id="settings-panel">
@@ -77,6 +77,7 @@ const html = /* html */`
       <select id="opt-quality"><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label>
     <label class="row-set">Time of day
       <select id="opt-time"><option value="day">Day</option><option value="sunset">Sunset</option><option value="night">Night</option></select></label>
+    <label class="row-set">Steering sensitivity <input type="range" id="opt-steer" min="0.5" max="2" step="0.1"></label>
     <label class="row-set">Music <input type="range" id="opt-music" min="0" max="1" step="0.05"></label>
     <label class="row-set">Sound FX <input type="range" id="opt-sfx" min="0" max="1" step="0.05"></label>
     <label class="row-set">Show FPS <input type="checkbox" id="opt-fps"></label>
@@ -173,6 +174,9 @@ export class UI {
     });
     const q = this.$('opt-quality'), t = this.$('opt-time'), m = this.$('opt-music'), f = this.$('opt-sfx'), fps = this.$('opt-fps'), st = this.$('opt-stripes');
     q.value = this.settings.quality; t.value = this.settings.time; m.value = this.settings.music; f.value = this.settings.sfx; fps.checked = this.settings.showFps; st.checked = this.settings.stripes;
+    const sv = this.$('opt-steer');
+    sv.value = this.settings.steerSens;
+    sv.oninput = () => this.emit('setting', 'steerSens', parseFloat(sv.value));
     q.onchange = () => this.emit('setting', 'quality', q.value);
     t.onchange = () => this.emit('setting', 'time', t.value);
     m.oninput = () => this.emit('setting', 'music', parseFloat(m.value));

@@ -14,7 +14,7 @@ import { safeStorage } from './engine/utils.js';
 
 const store = safeStorage();
 const settings = Object.assign(
-  { quality: 'high', time: 'day', music: 0.5, sfx: 0.85, showFps: false, carColor: '#d01818', stripes: true, camera: 0 },
+  { quality: 'high', time: 'day', music: 0.5, sfx: 0.85, showFps: false, carColor: '#e00000', stripes: false, camera: 0, steerSens: 1.2 },
   store.get('vr.settings', {}),
 );
 const saveSettings = () => store.set('vr.settings', settings);
@@ -44,6 +44,8 @@ async function init() {
   car.setLights(world.preset.lights);
   const audio = new AudioEngine(settings);
   const input = new Input();
+  car.steerSens = settings.steerSens;
+  input.sensitivity = settings.steerSens;
   const rig = new CameraRig(world.camera, env);
   rig.mode = settings.camera % CAMERA_MODES.length;
   const effects = new Effects(world.scene, env);
@@ -90,6 +92,7 @@ async function init() {
     }
     if (key === 'music' || key === 'sfx') { audio.ensure(); audio.applyVolumes(); }
     if (key === 'stripes') car.model.materials.stripe.visible = value;
+    if (key === 'steerSens') { car.steerSens = value; input.sensitivity = value; }
   });
   document.getElementById('cam-name').textContent = CAMERA_MODES[rig.mode];
 

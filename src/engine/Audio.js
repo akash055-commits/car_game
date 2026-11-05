@@ -70,11 +70,21 @@ export class AudioEngine {
     this.engineFilter.Q.value = 3;
     const shaper = ctx.createWaveShaper();
     const curve = new Float32Array(1024);
-    for (let i = 0; i < 1024; i++) { const x = i / 512 - 1; curve[i] = Math.tanh(x * 2.6); }
+    for (let i = 0; i < 1024; i++) { const x = i / 512 - 1; curve[i] = Math.tanh(x * 1.5); }
     shaper.curve = curve;
     const pre = ctx.createGain();
     pre.gain.value = 0.7;
-    pre.connect(shaper).connect(this.engineFilter).connect(this.engineGain).connect(this.sfx);
+    // high-pass removes the boomy sub-bass so the engine sings rather than rumbles
+    this.engineHP = ctx.createBiquadFilter();
+    this.engineHP.type = 'highpass';
+    this.engineHP.frequency.value = 140;
+    this.engineHP.Q.value = 0.6;
+    // gentle presence peak = the "sweet" mid-range wail of a high-revving V12
+    this.enginePeak = ctx.createBiquadFilter();
+    this.enginePeak.type = 'peaking';
+    this.enginePeak.gain.value = 5;
+    this.enginePeak.Q.value = 1.4;
+    pre.connect(shaper).connect(this.engineFilter).connect(this.engineHP).connect(this.enginePeak).connect(this.engineGain).connect(this.sfx);
 
     const mk = (type, gain, detune = 0) => {
       const o = ctx.createOscillator();
@@ -87,7 +97,7 @@ export class AudioEngine {
       return { o, g };
     };
     this.eng = [
-      mk('sawtooth', 0.5), mk('sawtooth', 0.32, 7), mk('square', 0.22), mk('sine', 0.6), mk('triangle', 0.25),
+      mk('sawtooth', 0.42), mk('sawtooth', 0.26, 9), mk('triangle', 0.3), mk('sine', 0.12), mk('sawtooth', 0.08),
     ];
     // Combustion "grit": noise amplitude-modulated around the firing frequency
     const n = this.noiseSource();
@@ -149,17 +159,18 @@ export class AudioEngine {
     }
     const rpm = car.rpm;
     const load = car.throttleSmoothed;
-    const fire = (rpm / 60) * 2; // 4-stroke V8-ish feel: 4 pulses/rev → use 2x base
+    const fire = (rpm / 60) * 6; // V12: 6 firing pulses per revolution → a smooth, high wail
     const [a, b, c, d, e] = this.eng;
     set(a.o.frequency, fire, 0.02);
-    set(b.o.frequency, fire * 1.002, 0.02);
-    set(c.o.frequency, fire * 0.5, 0.02);
-    set(d.o.frequency, fire * 0.25, 0.02);
-    set(e.o.frequency, fire * 1.5, 0.02);
-    set(this.engineFilter.frequency, 280 + rpm * 0.32 + load * 1600, 0.04);
-    set(this.engineGain.gain, 0.16 + load * 0.2 + (rpm / 7600) * 0.12, 0.05);
-    set(this.gritFilter.frequency, fire * 3, 0.05);
-    set(this.gritGain.gain, 0.15 + load * 0.35, 0.05);
+    set(b.o.frequency, fire * 1.003, 0.02);
+    set(c.o.frequency, fire * 2, 0.02);
+    set(d.o.frequency, fire * 0.5, 0.02);
+    set(e.o.frequency, fire * 3, 0.02);
+    set(this.engineFilter.frequency, 700 + rpm * 0.45 + load * 2600, 0.04);
+    set(this.enginePeak.frequency, fire * 2.2, 0.04);
+    set(this.engineGain.gain, 0.09 + load * 0.13 + (rpm / 7600) * 0.09, 0.05);
+    set(this.gritFilter.frequency, fire * 2.5, 0.05);
+    set(this.gritGain.gain, 0.05 + load * 0.12, 0.05);
     set(this.turbo.frequency, 1800 + rpm * 0.6, 0.1);
     set(this.turboGain.gain, load * Math.max(0, rpm - 3500) / 4000 * 0.018, 0.15);
 

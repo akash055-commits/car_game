@@ -163,7 +163,7 @@ export class Environment {
 
     const colors = new Float32Array(pos.count * 3);
     const nrm = geo.attributes.normal;
-    const grassA = new THREE.Color(0x4f7a32), grassB = new THREE.Color(0x6c8f3c), dry = new THREE.Color(0x8f9447);
+    const grassA = new THREE.Color(0x3a8a26), grassB = new THREE.Color(0x63ad30), dry = new THREE.Color(0x9aa33e);
     const rock = new THREE.Color(0x76705f), snow = new THREE.Color(0xf2f4f7), sand = new THREE.Color(0xc9b98a);
     const shoulder = new THREE.Color(0x5d6b3a);
     const c = new THREE.Color();
@@ -321,7 +321,7 @@ export class Environment {
     const post = new THREE.BoxGeometry(0.12, 0.8, 0.12);
     post.translate(0.1, 0.4, -0.45);
     const barrierGeo = mergeGeometries([rail, post]);
-    const barrierMat = new THREE.MeshStandardMaterial({ color: 0xc9ced4, metalness: 0.85, roughness: 0.32 });
+    const barrierMat = new THREE.MeshStandardMaterial({ color: 0x9aa3ad, metalness: 0.55, roughness: 0.45 });
     const list = [];
     const step = 3;
     for (let i = 0; i < this.N; i += step) {
@@ -544,8 +544,8 @@ export class Environment {
     }
     const trunkGeo = new THREE.CylinderGeometry(0.18, 0.32, 3, 7).translate(0, 1.5, 0);
     const trunkMat = new THREE.MeshStandardMaterial({ color: 0x5b4030, roughness: 1 });
-    const pineMat = addWind(new THREE.MeshStandardMaterial({ color: 0x2f5a2a, roughness: 0.9 }), this.wind, 0.025, 1.5);
-    const broadMat = addWind(new THREE.MeshStandardMaterial({ color: 0x4a7a2e, roughness: 0.85 }), this.wind, 0.03, 2.0);
+    const pineMat = addWind(new THREE.MeshStandardMaterial({ color: 0x23683a, roughness: 0.9 }), this.wind, 0.025, 1.5);
+    const broadMat = addWind(new THREE.MeshStandardMaterial({ color: 0x4f9a2a, roughness: 0.85 }), this.wind, 0.03, 2.0);
 
     const pines = [], broads = [];
     for (let i = 0; i < count; i++) {
@@ -593,7 +593,7 @@ export class Environment {
     }
     const geo = mergeGeometries(blades);
     geo.computeVertexNormals();
-    const mat = addWind(new THREE.MeshStandardMaterial({ color: 0x6b9440, roughness: 0.9, side: THREE.DoubleSide }), this.wind, 0.25, 0.05);
+    const mat = addWind(new THREE.MeshStandardMaterial({ color: 0x5fa833, roughness: 0.9, side: THREE.DoubleSide }), this.wind, 0.25, 0.05);
     const grass = new THREE.InstancedMesh(geo, mat, count);
     const flowerGeo = new THREE.IcosahedronGeometry(0.07, 0).translate(0, 0.45, 0);
     const flowers = new THREE.InstancedMesh(flowerGeo, new THREE.MeshStandardMaterial({ roughness: 0.6 }), Math.floor(count / 6));

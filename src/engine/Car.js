@@ -46,17 +46,20 @@ export class Car {
     this.spots = [];
     for (const sx of [-0.62, 0.62]) {
       const s = new THREE.SpotLight(0xfff2d8, 0, 70, 0.42, 0.55, 1.4);
-      s.position.set(sx, 0.05, 2.1);
+      s.position.set(sx, 0.1, 2.25);
       s.target.position.set(sx * 1.5, -1.2, 14);
       this.model.body.add(s, s.target);
       this.spots.push(s);
     }
     this.nitroLight = new THREE.PointLight(0x55aaff, 0, 6, 2);
-    this.nitroLight.position.set(0, -0.3, -2.8);
+    this.nitroLight.position.set(0, -0.2, -2.9);
     this.model.body.add(this.nitroLight);
 
     this.input = { throttle: 0, brake: 0, steer: 0, handbrake: false, nitro: false };
     this.frozen = false;
+    this.steerSens = 1.2;
+    this.pitchVel = 0;
+    this.rollVel = 0;
     this.lightsOn = false;
 
     this.rpm = IDLE_RPM;
@@ -115,7 +118,7 @@ export class Car {
       this.body,
     );
     const roof = pw.createCollider(
-      RAPIER.ColliderDesc.cuboid(0.7, 0.2, 1.0).setTranslation(0, 0.48, -0.4).setDensity(0).setFriction(0.3),
+      RAPIER.ColliderDesc.cuboid(0.7, 0.16, 1.0).setTranslation(0, 0.36, -0.4).setDensity(0).setFriction(0.3),
       this.body,
     );
     this.colliderHandles = new Set([this.collider.handle, roof.handle]);
@@ -127,9 +130,9 @@ export class Car {
     const pos = [[track, wheelBase], [-track, wheelBase], [track, -wheelBase], [-track, -wheelBase]];
     pos.forEach(([x, z], i) => {
       vc.addWheel({ x, y: connY, z }, { x: 0, y: -1, z: 0 }, { x: -1, y: 0, z: 0 }, SUSPENSION_REST, wheelRadius);
-      vc.setWheelSuspensionStiffness(i, 32);
-      vc.setWheelSuspensionCompression(i, 3.2);
-      vc.setWheelSuspensionRelaxation(i, 4.0);
+      vc.setWheelSuspensionStiffness(i, 27);
+      vc.setWheelSuspensionCompression(i, 2.6);
+      vc.setWheelSuspensionRelaxation(i, 3.0);
       vc.setWheelMaxSuspensionTravel(i, 0.26);
       vc.setWheelMaxSuspensionForce(i, 90000);
       vc.setWheelFrictionSlip(i, 2.2);
@@ -273,11 +276,11 @@ export class Car {
     vc.setWheelFrictionSlip(3, rearGrip);
 
     // Speed-sensitive steering with a touch of counter-steer assist
-    const maxSteer = lerp(0.58, 0.1, clamp(absSpeed / 38, 0, 1));
+    const maxSteer = lerp(0.6, 0.085 + 0.035 * this.steerSens, clamp(absSpeed / 38, 0, 1));
     this.slipAngle = absSpeed > 2 ? Math.atan2(this.lateralSpeed, Math.abs(this.forwardSpeed)) : 0;
     let target = inp.steer * maxSteer;
     if (absSpeed > 6 && !this.reverse) target += clamp(-this.slipAngle * 0.35, -0.2, 0.2) * (1 - Math.abs(inp.steer) * 0.5);
-    this.steerAngle = damp(this.steerAngle, target, 9, dt);
+    this.steerAngle = damp(this.steerAngle, target, 9 * this.steerSens, dt);
     vc.setWheelSteering(0, this.steerAngle);
     vc.setWheelSteering(1, this.steerAngle);
 
@@ -339,7 +342,7 @@ export class Car {
     // local acceleration for body roll / pitch
     const inv = _q.copy(this.currQuat).invert();
     const acc = dv.divideScalar(dt).applyQuaternion(inv);
-    this.localAccel.lerp(acc, 0.2);
+    this.localAccel.lerp(acc, 0.35);
     this.inWater = this.currPos.y < WATER_LEVEL + 0.25;
   }
 
@@ -349,8 +352,15 @@ export class Car {
     root.quaternion.slerpQuaternions(this.prevQuat, this.currQuat, alpha);
 
     // Extra body roll & pitch layered on the physics for a juicy feel
-    this.bodyRoll = damp(this.bodyRoll, clamp(this.localAccel.x * 0.006, -0.06, 0.06), 6, dt);
-    this.bodyPitch = damp(this.bodyPitch, clamp(-this.localAccel.z * 0.0045, -0.05, 0.05), 6, dt);
+    // Under-damped springs: the body squats on launch, dives under braking and
+    // visibly bounces back when the car comes to rest.
+    const pitchTarget = clamp(-this.localAccel.z * 0.006, -0.06, 0.06);
+    const rollTarget = clamp(this.localAccel.x * 0.0065, -0.07, 0.07);
+    const h = Math.min(dt, 1 / 30);
+    this.pitchVel += ((pitchTarget - this.bodyPitch) * 110 - this.pitchVel * 7.5) * h;
+    this.bodyPitch += this.pitchVel * h;
+    this.rollVel += ((rollTarget - this.bodyRoll) * 90 - this.rollVel * 7) * h;
+    this.bodyRoll += this.rollVel * h;
     this.model.body.rotation.set(this.bodyPitch, 0, this.bodyRoll);
     // idle engine shake
     this.model.body.position.y = Math.sin(time * (this.rpm / 60) * 0.5) * 0.0025 * (this.rpm < 1500 ? 1 : 0.3);
