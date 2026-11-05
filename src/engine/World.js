@@ -202,7 +202,7 @@ export class World {
     this.composer.setSize(w, h);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
     if (this.quality.bloom) {
-      this.bloom = new UnrealBloomPass(new THREE.Vector2(w / 2, h / 2), 0.22, 0.35, 2.4);
+      this.bloom = new UnrealBloomPass(new THREE.Vector2(w / 2, h / 2), 0.25, 0.35, 3.6);
       this.composer.addPass(this.bloom);
     } else this.bloom = null;
     this.speedPass = new ShaderPass(SpeedFXShader);

@@ -46,6 +46,7 @@ export class Environment {
     this.dynamicProps = [];
     this.staticBody = this.pw.createRigidBody(RAPIER.RigidBodyDesc.fixed());
     this.groundHandles = new Set();
+    const before = new Set(this.scene.children);
 
     this.buildTrack();
     this.buildHeightGrid();
@@ -61,7 +62,11 @@ export class Environment {
     this.buildStuntPark();
     this.buildProps();
     this.buildBounds();
+    this.objects = this.scene.children.filter((o) => !before.has(o));
   }
+
+  /** Hide the whole circuit world (used while the player is in the Playground). */
+  setVisible(v) { for (const o of this.objects) o.visible = v; }
 
   // ---------------------------------------------------------------- TRACK
   buildTrack() {
@@ -724,6 +729,7 @@ export class Environment {
       RAPIER.ColliderDesc.trimesh(new Float32Array(ng.attributes.position.array), new Uint32Array(ng.index.array)).setFriction(0.9),
       this.staticBody);
     this.groundHandles.add(col.handle);
+    return { mesh, handle: col.handle };
   }
 
   // ---------------------------------------------------------------- DYNAMIC PROPS

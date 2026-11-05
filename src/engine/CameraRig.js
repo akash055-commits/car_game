@@ -21,6 +21,10 @@ export class CameraRig {
     this.initialized = false;
     this.cinematicTimer = 0;
     this.cinematicSpot = new THREE.Vector3();
+    this.groundAt = (x, z) => env.heightAt(x, z);
+    this.iso = false;
+    this.zoom = 1;
+    window.addEventListener('wheel', (e) => { if (this.iso) this.zoom = clamp(this.zoom * (e.deltaY > 0 ? 1.08 : 0.92), 0.55, 1.7); }, { passive: true });
   }
 
   cycle() { this.mode = (this.mode + 1) % CAMERA_MODES.length; this.initialized = false; return CAMERA_MODES[this.mode]; }
@@ -42,7 +46,36 @@ export class CameraRig {
     this.applyFov();
   }
 
+  /** High, fixed-angle diorama camera used by the Playground. */
+  updateIso(car, dt) {
+    this.time += dt;
+    const p = car.mesh.position;
+    const z = this.zoom;
+    _desired.set(p.x - 11 * z, p.y + 14 * z, p.z - 11 * z);
+    // lead the camera slightly in the direction of travel
+    _desired.x += car.velocity.x * 0.18;
+    _desired.z += car.velocity.z * 0.18;
+    if (!this.initialized) { this.camera.position.copy(_desired); this.lookPos.copy(p); this.initialized = true; }
+    const cp = this.camera.position;
+    cp.x = damp(cp.x, _desired.x, 4, dt);
+    cp.y = damp(cp.y, _desired.y, 4, dt);
+    cp.z = damp(cp.z, _desired.z, 4, dt);
+    _target.set(p.x + car.velocity.x * 0.18, p.y, p.z + car.velocity.z * 0.18);
+    this.lookPos.lerp(_target, 1 - Math.exp(-5 * dt));
+    this.camera.lookAt(this.lookPos);
+    this.trauma = Math.max(0, this.trauma - dt * 1.4);
+    const shake = this.trauma * this.trauma;
+    if (shake > 0.0005) {
+      const t = this.time * 22;
+      this.camera.position.x += noise2(t, 1.3) * shake * 0.6;
+      this.camera.position.y += noise2(t, 7.1) * shake * 0.6;
+    }
+    this.fov = damp(this.fov, 45, 3, dt);
+    this.applyFov();
+  }
+
   update(car, dt, boostAmount) {
+    if (this.iso) { this.updateIso(car, dt); return; }
     this.time += dt;
     const p = car.mesh.position;
     const fwd = car.forward;
@@ -75,7 +108,7 @@ export class CameraRig {
         ahead.normalize().multiplyScalar(25 + speed * 0.8);
         const side = new THREE.Vector3(-ahead.z, 0, ahead.x).normalize().multiplyScalar((Math.random() < 0.5 ? -1 : 1) * (6 + Math.random() * 8));
         this.cinematicSpot.copy(p).add(ahead).add(side);
-        this.cinematicSpot.y = this.env.heightAt(this.cinematicSpot.x, this.cinematicSpot.z) + 1.2 + Math.random() * 3;
+        this.cinematicSpot.y = this.groundAt(this.cinematicSpot.x, this.cinematicSpot.z) + 1.2 + Math.random() * 3;
         this.cinematicTimer = 6;
         this.camera.position.copy(this.cinematicSpot);
         this.initialized = true;
@@ -90,7 +123,7 @@ export class CameraRig {
       const dist = (far ? 9.5 : 6.2) + clamp(speed * 0.04, 0, 1.8);
       const height = (far ? 3.4 : 2.1) + clamp(speed * 0.01, 0, 0.5);
       _desired.set(p.x - hx * dist, p.y + height, p.z - hz * dist);
-      const ground = this.env.heightAt(_desired.x, _desired.z) + 0.6;
+      const ground = this.groundAt(_desired.x, _desired.z) + 0.6;
       if (_desired.y < ground) _desired.y = ground;
       if (!this.initialized) { this.camera.position.copy(_desired); this.lookPos.copy(p); }
       const cp = this.camera.position;

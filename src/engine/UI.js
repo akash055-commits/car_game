@@ -16,6 +16,7 @@ const html = /* html */`
     <div class="row small"><span class="lbl">TOP SPEED</span><span id="hud-top" class="val">0 km/h</span></div>
   </div>
   <canvas id="minimap" width="360" height="360"></canvas>
+  <div id="pg-hud" class="pg-hud glass hidden"><span class="pg-star">★</span> <b id="pg-stars">0/7</b><span class="pg-sep">·</span><span class="pg-tip">Esc menu · R reset · scroll to zoom</span></div>
   <div id="banner" class="banner"></div>
   <div id="drift-pop" class="drift-pop"><div class="drift-score">0</div><div class="drift-mult">DRIFT x1</div></div>
   <div id="popups"></div>
@@ -58,6 +59,7 @@ const html = /* html */`
 <div id="menu" class="screen">
   <div class="logo"><span class="l1">VELOCITY</span><span class="l2">RUSH</span><div class="logo-sub">open-world driving · drift · time attack</div></div>
   <div class="menu-panel glass" id="main-panel">
+    <button class="btn primary" data-action="playground"><span class="ic">🧸</span>PLAYGROUND<small>Toy car · smash, score goals, find stars</small></button>
     <button class="btn primary" data-action="free"><span class="ic">🌍</span>FREE ROAM<small>Explore, drift, jump & collect coins</small></button>
     <button class="btn primary" data-action="trial"><span class="ic">🏁</span>TIME TRIAL<small>3 laps · beat your ghost</small></button>
     <button class="btn" data-action="garage"><span class="ic">🎨</span>GARAGE</button>
@@ -202,8 +204,12 @@ export class UI {
   }
 
   setMode(mode) {
+    const pg = mode === 'playground';
     document.querySelectorAll('.hud-top-left').forEach((e) => e.classList.add('hidden'));
-    (mode === 'trial' ? document.querySelector('.hud-top-left:not(#hud-free)') : this.$('hud-free')).classList.remove('hidden');
+    if (!pg) (mode === 'trial' ? document.querySelector('.hud-top-left:not(#hud-free)') : this.$('hud-free')).classList.remove('hidden');
+    this.$('pg-hud').classList.toggle('hidden', !pg);
+    this.minimap.classList.toggle('hidden', pg);
+    document.querySelector('.gauge-wrap').classList.toggle('hidden', pg);
     const hint = this.$('hint');
     hint.classList.remove('fade'); void hint.offsetWidth; hint.classList.add('fade');
   }
@@ -259,6 +265,12 @@ export class UI {
     this.$('hud-time').textContent = formatTime(time);
     this.$('hud-best').textContent = formatTime(best);
     this.$('hud-cp').textContent = `${cp}/${cps}`;
+  }
+
+  updatePlayground(found, total) {
+    const el = this.$('pg-stars');
+    el.textContent = `${found}/${total}`;
+    el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump');
   }
 
   updateFree({ score, coins, top }) {

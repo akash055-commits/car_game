@@ -214,7 +214,6 @@ export class Effects {
 
   update(dt, car) {
     const right = new THREE.Vector3(-1, 0, 0).applyQuaternion(car.mesh.quaternion);
-    const offRoadDist = this.env.trackWidth / 2 + 1.6;
     for (let i = 0; i < 4; i++) {
       const s = car.skid[i];
       const cp = car.contactPoints[i];
@@ -234,9 +233,7 @@ export class Effects {
     // Off-road dust
     const p = car.mesh.position;
     if (car.onGroundCount > 0 && car.speed > 4) {
-      const n = this.env.nearestTrack(p.x, p.z, car.trackIndex ?? -1);
-      const onPad = Math.hypot(p.x, p.z) < 58;
-      if (n.dist > offRoadDist && !onPad && !car.inWater) {
+      if (car.offRoad && !car.inWater) {
         this.dustAcc += dt * Math.min(car.speed, 40) * 1.6;
         while (this.dustAcc > 1) {
           this.dustAcc -= 1;

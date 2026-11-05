@@ -150,6 +150,14 @@ kbd { display: inline-block; min-width: 26px; padding: 2px 7px; margin-right: 4p
 .back-home { position: absolute; top: 18px; right: 20px; padding: 9px 16px; border-radius: 999px; background: rgba(12, 18, 30, 0.55); border: 1px solid var(--glass-border); backdrop-filter: blur(10px); color: var(--text); text-decoration: none; font-weight: 700; font-size: 15px; letter-spacing: 0.05em; transition: transform 0.25s var(--bounce), border-color 0.2s; }
 .back-home:hover { transform: translateX(-3px) scale(1.04); border-color: var(--accent); }
 
+.pg-hud { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; padding: 9px 18px; border-radius: 999px; font-size: 16px; font-weight: 700; white-space: nowrap; animation: dropIn 0.6s var(--bounce) both; }
+.pg-hud .pg-star { color: #ffd23f; font-size: 20px; filter: drop-shadow(0 0 6px rgba(255, 210, 63, 0.8)); }
+.pg-hud b { font-family: var(--display); font-size: 18px; display: inline-block; }
+.pg-hud b.bump { animation: gearBump 0.45s var(--bounce); }
+.pg-hud .pg-sep { color: var(--muted); }
+.pg-hud .pg-tip { color: var(--muted); font-weight: 600; font-size: 14px; }
+@media (max-width: 760px) { .pg-hud .pg-tip, .pg-hud .pg-sep { display: none; } }
+
 /* ---------- results ---------- */
 .record { text-align: center; font-family: var(--display); font-weight: 900; color: #ffd740; letter-spacing: 0.15em; animation: pulse 1s ease-in-out infinite; }
 .res-total { display: flex; justify-content: space-between; align-items: baseline; font-size: 15px; letter-spacing: 0.2em; color: var(--muted); font-weight: 700; padding: 4px 6px; }

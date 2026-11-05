@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
-import { buildCarModel, CAR_DIMS } from './CarModel.js';
+import { buildCarModel, buildToyModel, CAR_DIMS } from './CarModel.js';
 import { clamp, lerp, damp } from './utils.js';
 import { WATER_LEVEL } from './Environment.js';
 
@@ -37,10 +37,16 @@ export class Car {
     this.env = env;
     this.scene = world.scene;
 
-    this.model = buildCarModel(color);
-    this.scene.add(this.model.root);
-    this.scene.add(this.model.blob);
+    this.models = { sport: buildCarModel(color), toy: buildToyModel() };
+    for (const m of Object.values(this.models)) { this.scene.add(m.root, m.blob); m.root.visible = m.blob.visible = false; }
+    this.model = this.models.sport;
+    this.model.root.visible = this.model.blob.visible = true;
     this.mesh = this.model.root;
+    this.speedCap = Infinity;
+    this.groundAt = (x, z) => env.heightAt(x, z);
+    this.offRoad = false;
+    this.antennaRot = new THREE.Vector2();
+    this.antennaVel = new THREE.Vector2();
 
     // Headlight beams
     this.spots = [];
@@ -54,6 +60,7 @@ export class Car {
     this.nitroLight = new THREE.PointLight(0x55aaff, 0, 6, 2);
     this.nitroLight.position.set(0, -0.2, -2.9);
     this.model.body.add(this.nitroLight);
+    this.modelKind = 'sport';
 
     this.input = { throttle: 0, brake: 0, steer: 0, handbrake: false, nitro: false };
     this.frozen = false;
@@ -139,6 +146,25 @@ export class Car {
       vc.setWheelSideFrictionStiffness(i, 1.0);
     });
     this.vc = vc;
+  }
+
+  /** Swap between the realistic supercar and the Playground toy car. */
+  useModel(kind) {
+    if (kind === this.modelKind) return;
+    const prev = this.model;
+    const next = this.models[kind];
+    prev.root.visible = prev.blob.visible = false;
+    next.root.visible = next.blob.visible = true;
+    next.root.position.copy(prev.root.position);
+    next.root.quaternion.copy(prev.root.quaternion);
+    for (const s of this.spots) next.body.add(s, s.target);
+    next.body.add(this.nitroLight);
+    this.model = next;
+    this.mesh = next.root;
+    this.modelKind = kind;
+    this.setLights(this.lightsOn);
+    // the toy is tuned for playful, controllable speeds
+    this.speedCap = kind === 'toy' ? 21 : Infinity;
   }
 
   setColor(hex) {
@@ -243,6 +269,9 @@ export class Car {
     } else {
       this.nitro = Math.min(1, this.nitro + dt * 0.035);
     }
+    const cap = this.speedCap + (this.nitroActive ? 9 : 0);
+    if (this.forwardSpeed > cap) force = Math.min(force, 0);
+    else if (this.forwardSpeed > cap - 4) force *= (cap - this.forwardSpeed) / 4;
     if (this.reverse) {
       force = -force * 0.6;
       if (this.forwardSpeed < -14) force = 0;
@@ -362,6 +391,15 @@ export class Car {
     this.rollVel += ((rollTarget - this.bodyRoll) * 90 - this.rollVel * 7) * h;
     this.bodyRoll += this.rollVel * h;
     this.model.body.rotation.set(this.bodyPitch, 0, this.bodyRoll);
+    // Toy antenna: a springy whip that reacts to acceleration and turning
+    if (this.model.antenna) {
+      const tx = clamp(this.localAccel.z * 0.03, -0.6, 0.6), tz = clamp(-this.localAccel.x * 0.03, -0.6, 0.6);
+      this.antennaVel.x += ((tx - this.antennaRot.x) * 160 - this.antennaVel.x * 5) * h;
+      this.antennaVel.y += ((tz - this.antennaRot.y) * 160 - this.antennaVel.y * 5) * h;
+      this.antennaRot.x += this.antennaVel.x * h;
+      this.antennaRot.y += this.antennaVel.y * h;
+      this.model.antenna.rotation.set(this.antennaRot.x, 0, this.antennaRot.y);
+    }
     // idle engine shake
     this.model.body.position.y = Math.sin(time * (this.rpm / 60) * 0.5) * 0.0025 * (this.rpm < 1500 ? 1 : 0.3);
 
@@ -388,7 +426,7 @@ export class Car {
     // Lights
     const m = this.model.materials;
     const braking = (this.reverse ? this.input.throttle : this.input.brake) > 0.1 || this.frozen;
-    m.taillight.emissiveIntensity = braking ? 3.2 : (this.lightsOn ? 1.6 : 0.35);
+    m.taillight.emissiveIntensity = braking ? 5 : (this.lightsOn ? 1.6 : 0.35);
     m.reverse.emissiveIntensity = this.reverse && this.input.brake > 0.1 ? 6 : 0;
 
     // Nitro flames & backfire
@@ -405,7 +443,7 @@ export class Car {
 
     // Contact shadow follows the ground under the car
     const p = root.position;
-    const gy = this.onGroundCount > 0 ? Math.min(...this.contactPoints.map((c) => c.y)) : this.env.heightAt(p.x, p.z);
+    const gy = this.onGroundCount > 0 ? Math.min(...this.contactPoints.map((c) => c.y)) : this.groundAt(p.x, p.z);
     this.model.blob.position.set(p.x, gy + 0.05, p.z);
     this.model.blob.rotation.z = Math.atan2(this.forward.x, this.forward.z);
     const hgt = clamp(p.y - gy, 0, 6);

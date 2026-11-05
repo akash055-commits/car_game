@@ -7,8 +7,9 @@ const CHECKPOINTS = 8;
 const store = safeStorage();
 
 export class Game {
-  constructor({ world, env, car, ui, audio, effects, rig, input }) {
-    Object.assign(this, { world, env, car, ui, audio, effects, rig, input });
+  constructor({ world, env, car, ui, audio, effects, rig, input, playground }) {
+    Object.assign(this, { world, env, car, ui, audio, effects, rig, input, playground });
+    this.worldKind = 'main';
     this.mode = 'free';
     this.state = 'menu';
     this.time = 0;
@@ -98,7 +99,30 @@ export class Game {
   }
 
   // ------------------------------------------------ flow
+  /** Switch between the circuit world and the Playground island. */
+  setWorld(kind) {
+    if (kind === this.worldKind) return;
+    this.worldKind = kind;
+    const pg = kind === 'playground';
+    this.env.setVisible(!pg);
+    this.playground.setVisible(pg);
+    for (const o of [this.coinMesh, this.nitroMesh, this.haloMesh]) o.visible = !pg;
+    if (pg) { this.cpMarker.visible = false; this.ghost.root.visible = false; }
+    this.car.useModel(pg ? 'toy' : 'sport');
+    const ground = pg ? () => 0 : (x, z) => this.env.heightAt(x, z);
+    this.car.groundAt = ground;
+    this.rig.groundAt = ground;
+    this.rig.iso = pg;
+    this.effects.skids.clear();
+  }
+
   spawnAtStart() {
+    if (this.worldKind === 'playground') {
+      const s = this.playground.spawn();
+      this.car.reset(s.pos, s.yaw);
+      this.rig.snap();
+      return;
+    }
     const env = this.env;
     const back = this.mode === 'trial' ? -9 : -4;
     const t = env.tangents[0];
@@ -111,7 +135,21 @@ export class Game {
 
   start(mode) {
     this.mode = mode;
+    this.setWorld(mode === 'playground' ? 'playground' : 'main');
     this.resetStats();
+    if (mode === 'playground') {
+      this.playground.reset();
+      this.effects.skids.clear();
+      this.spawnAtStart();
+      this.car.nitro = 1;
+      this.ui.setMode(mode);
+      this.ui.showScreen('hud');
+      this.ui.updatePlayground(0, this.playground.stars.length);
+      this.state = 'playing';
+      this.car.frozen = false;
+      this.ui.banner('PLAYGROUND', 'gold', 1.8);
+      return;
+    }
     this.env.resetProps();
     this.effects.skids.clear();
     this.spawnAtStart();
@@ -151,6 +189,7 @@ export class Game {
 
   toMenu() {
     this.state = 'menu';
+    this.setWorld('main');
     this.car.frozen = true;
     this.ghost.root.visible = false;
     this.cpMarker.visible = false;
@@ -159,6 +198,16 @@ export class Game {
   }
 
   resetCar() {
+    if (this.worldKind === 'playground') {
+      const p = this.car.mesh.position;
+      const onIsland = Math.hypot(p.x - this.playground.spawn().pos.x, p.z - this.playground.spawn().pos.z + 4) < 74 && p.y > -1;
+      if (onIsland) this.car.reset(new THREE.Vector3(p.x, 1.4, p.z), this.car.yaw);
+      else this.spawnAtStart();
+      this.rig.snap();
+      this.endDrift(true);
+      this.ui.popup('RESET', 'blue');
+      return;
+    }
     const env = this.env;
     const n = env.nearestTrack(this.car.mesh.position.x, this.car.mesh.position.z, this.trackIndex);
     const p = env.samples[n.index].clone();
@@ -179,11 +228,13 @@ export class Game {
     if (this.state !== 'playing' && this.state !== 'countdown') return;
 
     const p = car.mesh.position;
+    if (this.mode === 'playground') { this.updatePlayground(dt); return; }
     const n = this.env.nearestTrack(p.x, p.z, this.trackIndex);
     this.trackIndex = n.index;
     car.trackIndex = n.index;
     this.offRoad = n.dist > this.env.trackWidth / 2 + 1.5 && Math.hypot(p.x, p.z) > 58;
     this.topSpeed = Math.max(this.topSpeed, car.kmh);
+    car.offRoad = this.offRoad;
 
     if (this.state === 'playing') {
       this.updateDrift(dt);
@@ -197,6 +248,39 @@ export class Game {
       this.ui.updateTrial({ lap: this.lap, laps: LAPS, time: this.state === 'playing' ? this.time - this.lapStart : 0, best: this.best, cp: this.nextCp, cps: CHECKPOINTS });
     } else {
       this.ui.updateFree({ score: this.score, coins: this.coins, top: this.topSpeed });
+    }
+  }
+
+  updatePlayground(dt) {
+    const car = this.car, pg = this.playground;
+    const p = car.mesh.position;
+    this.offRoad = pg.surfaceAt(p.x, p.z) === 'sand';
+    car.offRoad = this.offRoad;
+    if (this.state !== 'playing') return;
+    this.updateDrift(dt);
+    this.updateAir(dt);
+    if (car.upsideTimer > 2) this.resetCar();
+    for (const e of pg.update(dt, car)) {
+      if (e.type === 'star') {
+        this.audio.powerup();
+        this.effects.burst(e.pos, 0xffd54f, 60);
+        this.ui.popup(`★ ${e.found} / ${e.total}`, 'gold');
+        this.ui.updatePlayground(e.found, e.total);
+        if (e.found === e.total) { this.ui.banner('ALL STARS FOUND!', 'gold', 3); this.effects.confetti(p, 300); this.audio.lap(); }
+      } else if (e.type === 'pins') {
+        if (e.strike) { this.ui.banner('STRIKE!', 'gold', 2.2); this.effects.confetti(e.pos, 200); this.audio.lap(); }
+        else { this.ui.popup(`${e.count} PIN${e.count > 1 ? 'S' : ''}!`, 'green'); this.audio.checkpoint(); }
+      } else if (e.type === 'goal') {
+        this.ui.banner('GOAL!', 'good', 2);
+        this.effects.confetti(e.pos, 220);
+        this.audio.lap();
+        this.rig.addTrauma(0.3);
+      } else if (e.type === 'splash') {
+        this.effects.splash(e.pos, 12);
+        this.audio.splashSound();
+        this.ui.popup('SPLASH!', 'blue');
+        this.spawnAtStart();
+      }
     }
   }
 

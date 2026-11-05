@@ -10,6 +10,7 @@ import { CameraRig, CAMERA_MODES } from './engine/CameraRig.js';
 import { Effects } from './engine/Effects.js';
 import { UI } from './engine/UI.js';
 import { Game } from './engine/Game.js';
+import { Playground } from './engine/Playground.js';
 import { safeStorage } from './engine/utils.js';
 
 const store = safeStorage();
@@ -38,6 +39,10 @@ async function init() {
   await progress(45, 'Sculpting terrain & laying asphalt…');
   const env = new Environment(world, physics, world.quality);
 
+  await progress(65, 'Building the playground…');
+  const playground = new Playground(world, physics, env);
+  playground.setNight(settings.time === 'night');
+
   await progress(75, 'Polishing the car…');
   const car = new Car(world, physics, env, settings.carColor);
   car.model.materials.stripe.visible = settings.stripes;
@@ -53,7 +58,7 @@ async function init() {
   const ui = new UI(settings, audio);
   ui.setupMinimap(env);
   input.bindTouch(document.getElementById('app'));
-  const game = new Game({ world, env, car, ui, audio, effects, rig, input });
+  const game = new Game({ world, env, car, ui, audio, effects, rig, input, playground });
   game.spawnAtStart();
   car.frozen = true;
   world.onResized = (w, h) => effects.resize(h);
@@ -64,7 +69,7 @@ async function init() {
     const carHit = car.colliderHandles.has(h1) || car.colliderHandles.has(h2);
     if (!carHit) return;
     const other = car.colliderHandles.has(h1) ? h2 : h1;
-    if (env.groundHandles.has(other)) {
+    if (env.groundHandles.has(other) || playground.groundHandles.has(other)) {
       if (car.lastDeltaV > 6) game.onCrash(car.lastDeltaV * 0.6, car.mesh.position.clone());
       return;
     }
@@ -74,6 +79,7 @@ async function init() {
   });
 
   // UI wiring
+  ui.on('playground', () => { game.start('playground'); startAudio(); });
   ui.on('free', () => { game.start('free'); startAudio(); });
   ui.on('trial', () => { game.start('trial'); startAudio(); });
   ui.on('resume', () => game.resume());
@@ -89,6 +95,7 @@ async function init() {
       world.setTimeOfDay(value);
       car.setLights(world.preset.lights);
       effects.setNight(value === 'night');
+      playground.setNight(value === 'night');
     }
     if (key === 'music' || key === 'sfx') { audio.ensure(); audio.applyVolumes(); }
     if (key === 'stripes') car.model.materials.stripe.visible = value;
@@ -158,7 +165,7 @@ async function init() {
       }
       car.updateVisual(acc / FIXED_DT, dt, elapsed);
       game.update(dt);
-      env.update(dt, elapsed);
+      if (game.worldKind === 'main') env.update(dt, elapsed);
       effects.update(dt, car);
     }
 
@@ -171,7 +178,7 @@ async function init() {
     audio.update(car, { offRoad: game.offRoad, paused: paused || game.state === 'menu' && !audio.ctx });
     if (driving || paused) {
       ui.updateGauge(car, dt);
-      ui.drawMinimap(car, game.minimapExtras());
+      if (game.mode !== 'playground') ui.drawMinimap(car, game.minimapExtras());
     }
     ui.update(dt, fps);
     input.endFrame();
@@ -182,7 +189,7 @@ async function init() {
   frame();
 
   // expose for debugging / automated tests
-  window.__game = { game, car, world, env, physics, audio, input, rig, effects, ui };
+  window.__game = { game, car, world, env, physics, audio, input, rig, effects, ui, playground };
 }
 
 init().catch((err) => {
