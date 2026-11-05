@@ -288,6 +288,8 @@ body.touch-mode .speedo .boost { top: 18px; }
 }
 @media (orientation: portrait) {
   body.touch-mode .toasts { top: calc(240px + var(--safe-top)); }
+  body.touch-mode .pills { top: calc(132px + var(--safe-top)); left: calc(12px + var(--safe-left)); transform: none; flex-direction: column; align-items: flex-start; gap: 6px; }
+  body.touch-mode .activity { top: calc(212px + var(--safe-top)); }
 }
 
 @media (max-width: 720px) {

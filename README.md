@@ -1,6 +1,6 @@
 # Seasons Valley
 
-A cozy, physics-driven 3D driving game in the browser. Cruise a little off-road buggy around a valley circuit, switch between **Autumn**, **Spring** and **Monsoon** at any time, drive into the night, hunt for 25 glowing embers and chase your best lap.
+A cozy open-world town in the browser. Drive a little off-road buggy, ride a motorbike, fly a helicopter or get out and walk around **Maple Hollow**: a big town full of people going about their day, builders putting up houses and shops (and rebuilding them if you knock them down), traffic, a busy market and a working airport. Switch between **Autumn**, **Spring** and **Monsoon** at any time, drive into the night, take on courier, taxi and rally activities and hunt for 25 glowing embers.
 
 **Play it live: [www.akashm.site/games/seasons-valley](https://www.akashm.site/games/seasons-valley/)**
 
@@ -22,30 +22,39 @@ The live copy lives in [akash055-commits.github.io](https://github.com/akash055-
 
 | Keyboard | Action |
 | --- | --- |
-| `W` `A` `S` `D` / arrows | Drive, brake and reverse, steer |
-| `Space` | Handbrake drift |
-| `Shift` | Boost |
+| `W` `A` `S` `D` / arrows | Drive / ride / walk (camera-relative on foot) |
+| `Space` | Handbrake drift · jump on foot · helicopter climb |
+| `Shift` | Boost · run on foot · helicopter descend |
+| `F` (or `E`) | Get in / out of the buggy, motorbike or helicopter |
+| `I` | Helicopter engine start / stop (wait for full rotor speed) |
+| `Q` `E` | Helicopter sideways strafe |
+| `G` | Start an activity at a glowing marker, or quit one |
+| `J` | Activities list (with "show the way") |
 | `1` `2` `3` | Autumn / Spring / Monsoon |
 | `N` | Day ↔ night |
-| `C` | Diorama camera ↔ chase camera |
-| `R` | Reset the car onto the road |
+| `C` | Camera style (diorama ↔ chase in vehicles, eye-level ↔ diorama on foot) |
+| `R` | Reset the vehicle onto the road |
 | `M` | Music on / off |
-| `H` | Horn |
+| `H` | Horn (people turn round, and some grumble) |
 | Mouse drag / wheel | Orbit / zoom the camera |
+| Click the minimap | Enlarge to the full town map |
 
-On phones and tablets an on-screen joystick, gas, boost and drift buttons appear automatically. Drag on the scene to look around.
+On phones and tablets an on-screen joystick and buttons appear automatically. They change for walking (jump, run), driving (gas, boost, drift) and flying (up, down, engine). Tap the on-screen prompt to get in a vehicle or start an activity; drag on the scene to look around.
 
 ## What's inside
 
-- **Driving:** raycast-vehicle suspension, tyre grip that changes on pavers, dirt, wood and wet surfaces, a 5-speed gearbox, handbrake drifts, jumps and knockable crates, barrels and cones.
-- **World:** a heightfield valley with a cobbled circuit, lake, stream, a wooden bridge, cabin, pier, lanterns, wind-swept grass and fluffy leaf-card trees.
-- **Seasons and time:** every colour is a shared shader uniform, so seasons blend smoothly. The day/night cycle brings out lanterns, headlights, stars, fireflies and (in the monsoon) lightning.
-- **Look:** soft shadows, emissive bloom, a tilt-shift "miniature" blur and per-season colour grading.
-- **Sound:** a procedural engine that follows the real RPM, gears and throttle, plus tyre, surface, wind, impact and ambience sounds, all synthesized in code. Background music plays very quietly.
-- **Game:** a lap timer with 6 checkpoints, a saved best lap and 25 collectibles with saved progress.
+- **Town:** a grid of eight streets each way with sidewalks, crossings and bridges. It holds houses, shops, apartments, offices, a cinema, a town square with a clock tower, a busy market, a school, a park and lake, a fire station, police station, hospital, hotel, library, gas station, stunt park and builders' yard.
+- **People:** more than 200 hand-rigged townsfolk with faces, outfits and animation. They walk the sidewalks with path-finding, wait at crossings, shop at the market, sit on benches, chat, jog and play. They dodge your vehicle, and if you bump one they tumble, get up dizzy and shake a fist (cartoon style).
+- **Builders:** nine construction sites where crews carry materials and hammer homes and shops together piece by piece. Crash into one and the pieces collapse with real physics; the builders sigh and rebuild.
+- **Vehicles:** the buggy (raycast suspension, 5-speed gearbox, drifts), a sport motorbike with lean and balance assist, and a helicopter with start-up and shut-down, collective, altitude hold and coordinated turns. Park it anywhere. Town traffic drives the streets.
+- **On foot:** get out anywhere and walk, run and jump with an eye-level third-person camera.
+- **Airport:** a runway you can drive on, taxiways, a terminal with jet bridges, a control tower, hangars with parked planes and airliners that push back, taxi, take off, fly a circuit and land automatically. Jets with contrails cross the sky overhead.
+- **Activities:** Town Courier (parcels and building supplies against the clock), Town Taxi (pick up waving fares, tips for smooth rides) and Checkpoint Rally (12 hoops, medals). Coins and records are saved.
+- **Seasons and time:** every colour is a shared shader uniform, so seasons blend smoothly. A layered sky with clouds, stars and a moon; the day/night cycle lights windows, street lamps and headlights.
+- **Sound:** procedural engines for the buggy and bike, helicopter rotor and turbine, jet roar, footsteps, voices, hammers, honks and seasonal ambience, all synthesized in code. The tyre squeal is subtle and only on real slides. Each season has its own quiet background track.
 
 Graphics quality (High / Low) and volumes live in the settings panel. Phones start on Low automatically.
 
 ## Credits
 
-Music: "Sudo", "Boy" and "Baguira" from [Bruno Simon's folio-2025](https://github.com/brunosimon/folio-2025/tree/main/static/sounds/musics), released under CC0 1.0. See `public/sounds/music/LICENSE.md`.
+Music: "Sudo" (Autumn), "Baguira" (Spring) and "Boy" (Monsoon) from [Bruno Simon's folio-2025](https://github.com/brunosimon/folio-2025/tree/main/static/sounds/musics), released under CC0 1.0. See `public/sounds/music/LICENSE.md`.
