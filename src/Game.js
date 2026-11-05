@@ -11,7 +11,13 @@ import { Layout, WORLD } from './world/Layout.js'
 import { U } from './world/Uniforms.js'
 
 import { Terrain, buildTerrainPhysics } from './world/Terrain.js'
-import { Road } from './world/Road.js'
+import { Town } from './world/Town.js'
+import { Airport } from './world/Airport.js'
+import { CrowdRig } from './characters/Rig.js'
+import { Emotes, EMOTE } from './characters/Emotes.js'
+import { People } from './characters/People.js'
+import { Construction } from './characters/Construction.js'
+import { Traffic } from './traffic/Traffic.js'
 import { Water } from './world/Water.js'
 import { Grass } from './world/Grass.js'
 import { Foliage } from './world/Foliage.js'
@@ -21,12 +27,17 @@ import { Lighting } from './world/Lighting.js'
 import { Seasons } from './atmosphere/Seasons.js'
 import { DayCycle } from './atmosphere/DayCycle.js'
 import { Particles } from './atmosphere/Particles.js'
-import { VehiclePhysics } from './vehicle/VehiclePhysics.js'
+import { VehiclePhysics, CAR, BIKE } from './vehicle/VehiclePhysics.js'
 import { VehicleVisual } from './vehicle/VehicleVisual.js'
+import { BikeVisual } from './vehicle/BikeVisual.js'
+import { HeliPhysics, HeliVisual } from './vehicle/Helicopter.js'
+import { Player } from './player/Player.js'
+import { AIRPORT } from './world/Layout.js'
+import { Aviation } from './aviation/Aviation.js'
 import { CameraRig } from './vehicle/CameraRig.js'
 import { Effects } from './vehicle/Effects.js'
-import { Circuit } from './gameplay/Circuit.js'
 import { Collectibles } from './gameplay/Collectibles.js'
+import { Activities } from './gameplay/Activities.js'
 
 const nextFrame = () => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)))
 
@@ -61,23 +72,27 @@ export class Game {
     this.camera = this.renderer.camera
     await nextFrame()
 
-    progress(0.3, 'Placing lanterns & bridges')
-    this.props = new Props(this.scene, this.physics, this.layout)
-    this.circuit = new Circuit(this.scene, this.layout)
-    this.collectibles = new Collectibles(this.scene, this.layout, this.props)
+    progress(0.25, 'Building the town')
+    this.town = new Town(this.scene, this.physics, this.layout)
+    await nextFrame()
+    this.airport = new Airport(this.scene, this.physics, this.layout, this.town)
+    this.aviation = new Aviation(this.scene, this.physics, this.layout)
+    progress(0.35, 'Lighting the streets')
+    this.props = new Props(this.scene, this.physics, this.layout, this.town)
+    this.collectibles = new Collectibles(this.scene, this.layout, this.props, this.town)
     await nextFrame()
 
-    progress(0.45, 'Growing trees')
-    this.foliage = new Foliage(this.scene, this.physics, this.layout, this.quality)
-    const { heightTex, groundTex } = this.layout.createTextures()
+    progress(0.45, 'Planting trees')
+    this.foliage = new Foliage(this.scene, this.physics, this.layout, this.quality, this.town)
+    const { heightTex, groundTex, roadTex } = this.layout.createTextures()
     U.uHeightTex.value = heightTex
     U.uGroundTex.value = groundTex
+    U.uRoadTex.value = roadTex
     await nextFrame()
 
     progress(0.6, 'Painting the ground')
     this.terrain = new Terrain(this.scene, this.layout)
     buildTerrainPhysics(this.physics, this.layout)
-    this.road = new Road(this.scene, this.layout)
     this.water = new Water(this.scene)
     this.grass = new Grass(this.scene, this.quality)
     await nextFrame()
@@ -99,18 +114,61 @@ export class Game {
     }
     await nextFrame()
 
-    progress(0.85, 'Fuelling the buggy')
-    this.spawnFrame = this.layout.roadFrame(this.layout.roadCount - 14)
-    this.vehicle = new VehiclePhysics(this.physics, this.spawnFrame)
-    this.visual = new VehicleVisual(this.scene, this.vehicle)
+    progress(0.8, 'Waking up the townsfolk')
+    this.crowd = new CrowdRig(this.scene, 220)
+    this.emotes = new Emotes(this.scene, 90)
+    this.people = new People(this.crowd, this.layout, this.town, this.props, this.quality)
+    this.people.setBenches(this.props.benches)
+    this.crowdCtx = {
+      car: { x: 0, y: 0, z: 0, vx: 0, vz: 0, speed: 0 },
+      ground: (x, z) => this.layout.getDriveHeight(x, z),
+      emotes: this.emotes,
+      carNear: (x, z, r) => {
+        const c = this.crowdCtx.car
+        return (c.speed > 1.5 && (c.x - x) ** 2 + (c.z - z) ** 2 < r * r) || (this.traffic && this.traffic.near(x, z, r))
+      },
+      onVoice: (kind, x, z) => this.emit('voice', kind, x, z),
+      onHammer: (x, z) => this.emit('hammer', x, z),
+    }
+    this.construction = new Construction(this.scene, this.physics, this.layout, this.town, this.crowd, this.quality)
+    this.traffic = new Traffic(this.scene, this.physics, this.layout, this.crowd, this.quality)
+    this.construction.on('complete', (site) => this.emit('siteComplete', site))
+    this.construction.on('smash', (site, n) => this.emit('siteSmash', site, n))
+    this.activities = new Activities(this.scene, this.layout, this.town, this.construction, this.crowd, this.emotes)
+    for (const ev of ['start', 'end', 'objective', 'coins', 'toast', 'countdown', 'checkpoint', 'rallyDone', 'delivered', 'fare', 'summary', 'passengerUpset'])
+      this.activities.on(ev, (...a) => this.emit(`act:${ev}`, ...a))
+    this.actCtx = {
+      pos: () => this.carPos,
+      speed: () => (this.active ? Math.abs(this.active.phys.speed) : this.player.speed),
+      inVehicle: () => !!this.active && this.active.type !== 'heli',
+      vehicleType: () => this.active?.type || 'foot',
+      passengerSeat: () => this.passengerSeat(),
+    }
+    await nextFrame()
+
+    progress(0.88, 'Fuelling the vehicles')
     this.effects = new Effects(this.scene, this.layout, this.quality)
+    this.vehicles = []
+    const carFrame = this.frameNear(-10, -26, Math.PI / 2)
+    const car = new VehiclePhysics(this.physics, carFrame, CAR)
+    this.addVehicle('car', 'Buggy', car, new VehicleVisual(this.scene, car), { seat: new THREE.Vector3(0.36, 0.6, -0.38), exitSide: 1, width: 1.9, length: 3.6 })
+    const bikeY = this.layout.getDriveHeight(-14, -19.5)
+    const bike = new VehiclePhysics(this.physics, { x: -14, y: bikeY, z: -19.5, heading: Math.PI / 2 }, BIKE)
+    this.addVehicle('bike', 'Motorbike', bike, new BikeVisual(this.scene, bike), { seat: new THREE.Vector3(0, 0.78, -0.22), exitSide: 1, width: 1.1, length: 2.0 })
+    const hp = AIRPORT.helipad
+    const heli = new HeliPhysics(this.physics, { x: hp.x, y: this.layout.getHeight(hp.x, hp.z) + 0.1, z: hp.z, heading: 0 })
+    this.addVehicle('heli', 'Helicopter', heli, new HeliVisual(this.scene, heli), { seat: new THREE.Vector3(0.38, 0.95, 0.75), exitSide: 1, width: 2.2, length: 9 })
+    this.player = new Player(this.physics, this.crowd, this.layout, { x: carFrame.x, y: carFrame.y, z: carFrame.z, heading: carFrame.heading })
+    this.player.onStep = (k) => {
+      const p = this.player.pos
+      const q = this.layout.queryRoad(p.x, p.z)
+      const surf = q.d < WORLD.roadHalfWidth + WORLD.sidewalk + 0.3 ? 'road' : p.y - this.layout.getHeight(p.x, p.z) > 0.3 ? 'wood' : 'grass'
+      this.emit('footstep', k, surf)
+    }
+    this.enterVehicle(this.vehicles[0], true)
     this.carPos = new THREE.Vector3()
     this.carQuat = new THREE.Quaternion()
-    this.physics.addDynamic(this.vehicle.body, (prev, curr, a) => {
-      this.carPos.set(prev.p.x + (curr.p.x - prev.p.x) * a, prev.p.y + (curr.p.y - prev.p.y) * a, prev.p.z + (curr.p.z - prev.p.z) * a)
-      this.carQuat.set(prev.q.x, prev.q.y, prev.q.z, prev.q.w).slerp(new THREE.Quaternion(curr.q.x, curr.q.y, curr.q.z, curr.q.w), a)
-    })
-    this.rig = new CameraRig(this.camera, this.renderer.renderer.domElement)
+    this.rig = new CameraRig(this.camera, this.renderer.renderer.domElement, this.physics)
     this.input = new Input()
     this.input.enabled = false
     this.wireEvents()
@@ -141,12 +199,14 @@ export class Game {
         this.lastShake = now
         this.lastShakeStrength = strength
       }
+      if (isCar && strength > 0.18) this.activities.bump()
+      if (isCar && other?.kind === 'traffic' && strength > 0.03) {
+        const h = t1?.kind === 'traffic' ? h1 : h2
+        const col = this.physics.world.getCollider(h)
+        if (col) this.traffic.rammed(col.parent(), this.emotes, (x, z) => this.emit('honk', x, z))
+      }
       this.emit('impact', { force, strength: isCar ? strength : clamp(force / 8000, 0, 1), material: other?.material || 'ground', withCar: isCar, kind: other?.kind })
     }
-    this.circuit.on('checkpoint', (n, t) => this.emit('checkpoint', n, t))
-    this.circuit.on('lap', (t, best, lap) => this.emit('lap', t, best, lap))
-    this.circuit.on('start', (lap) => this.emit('lapStart', lap))
-    this.circuit.on('invalid', () => this.emit('lapInvalid'))
     this.collectibles.on('collect', (it, n, total) => {
       this.effects.burst(it.pos, 'sparkle', 34)
       this.emit('collect', n, total)
@@ -160,6 +220,11 @@ export class Game {
 
     this.input.on('press', (code) => {
       if (!this.started) return
+      const inHeli = this.active?.type === 'heli'
+      if (code === 'KeyF' || (code === 'KeyE' && !inHeli)) this.toggleVehicle()
+      if (code === 'KeyI' && inHeli) this.emit('ignition', this.active.phys.ignition())
+      if (code === 'KeyG') this.toggleActivity()
+      if (code === 'KeyJ') this.emit('openActivities')
       if (code === 'KeyR') this.respawn()
       if (code === 'KeyC') this.emit('camera', this.rig.toggle())
       if (code === 'Digit1') this.seasons.set('autumn')
@@ -175,6 +240,48 @@ export class Game {
     this.input.enabled = true
   }
 
+  // G: start the activity whose marker you're standing / parked in, or quit the current one
+  toggleActivity() {
+    const acts = this.activities
+    if (acts.current) return acts.stop('quit')
+    const s = acts.nearStart(this.carPos)
+    if (!s) return this.emit('notice', 'Find a glowing marker to start an activity (J for the list)')
+    if (!this.active || this.active.type === 'heli') return this.emit('notice', 'Grab the buggy or the motorbike first')
+    acts.clearWaypoint()
+    acts.start(s.id, this.actCtx)
+  }
+
+  // Horn: nearby people stop, turn to look and some grumble or wave
+  honk() {
+    const p = this.carPos
+    const now = performance.now()
+    if (now - (this.lastHonk || 0) < 700) return
+    this.lastHonk = now
+    let n = 0
+    for (const c of this.people.all) {
+      if (c.reaction || !c.visible || c.sit > 0.5) continue
+      const d2 = (c.x - p.x) ** 2 + (c.z - p.z) ** 2
+      if (d2 > 16 * 16) continue
+      c.heading = Math.atan2(p.x - c.x, p.z - c.z)
+      c.reaction = { type: 'recover', t: 0, d: 0.8 + Math.random() * 0.6 }
+      if (n++ < 4) {
+        const r = Math.random()
+        this.emotes.show(c, r < 0.4 ? EMOTE.angry : r < 0.7 ? EMOTE.question : EMOTE.wave, 1.4)
+        if (r < 0.4) c.fist = 1
+        if (n === 1) this.emit('voice', r < 0.4 ? 'angry' : 'hey', c.x, c.z)
+      }
+    }
+  }
+
+  // Where a taxi passenger sits in the current vehicle (world space)
+  passengerSeat() {
+    const v = this.active || this.lastVehicle
+    const local = v.type === 'bike' ? new THREE.Vector3(0, 0.82, -0.62) : new THREE.Vector3(-0.36, 0.6, -0.38)
+    const p = local.applyQuaternion(v.quat).add(v.pos)
+    const heading = new THREE.Euler().setFromQuaternion(v.quat, 'YXZ').y
+    return { x: p.x, y: p.y, z: p.z, heading, lean: v.visual.leanAngle || 0 }
+  }
+
   toggleNight() {
     const toNight = this.dayCycle.toggleNight()
     this.envDirty = 3.6
@@ -182,36 +289,145 @@ export class Game {
     return toNight
   }
 
+  // Road frame nearest to a point, oriented as close as possible to a heading
+  frameNear(x, z, heading) {
+    const L = this.layout
+    const q = L.queryRoad(x, z)
+    let i = q.i >= 0 ? q.i : 0
+    const e = L.edges[L.roadEdge[i]]
+    while (L.isOnBridge(i) && i > e.start) i--
+    const f = L.roadFrame(i)
+    const d = Math.atan2(Math.sin(heading - f.heading), Math.cos(heading - f.heading))
+    return Math.abs(d) > Math.PI / 2 ? L.roadFrame(i, true) : f
+  }
+
+  addVehicle(type, name, phys, visual, opts) {
+    const v = { type, name, phys, visual, pos: new THREE.Vector3(), quat: new THREE.Quaternion(), ...opts }
+    const tmp = new THREE.Quaternion()
+    this.physics.addDynamic(phys.body, (prev, curr, a) => {
+      v.pos.set(prev.p.x + (curr.p.x - prev.p.x) * a, prev.p.y + (curr.p.y - prev.p.y) * a, prev.p.z + (curr.p.z - prev.p.z) * a)
+      v.quat.set(prev.q.x, prev.q.y, prev.q.z, prev.q.w).slerp(tmp.set(curr.q.x, curr.q.y, curr.q.z, curr.q.w), a)
+    })
+    const t = phys.body.translation(), r = phys.body.rotation()
+    v.pos.set(t.x, t.y, t.z)
+    v.quat.set(r.x, r.y, r.z, r.w)
+    this.vehicles.push(v)
+    return v
+  }
+
+  get active() {
+    return this.player?.mode === 'vehicle' ? this.player.vehicle : null
+  }
+
+  // Compatibility: the physics of the vehicle being driven (or the last one used)
+  get vehicle() {
+    return (this.active || this.lastVehicle || this.vehicles[0]).phys
+  }
+
+  // Nearest vehicle the player could get into
+  nearbyVehicle() {
+    const p = this.player.pos
+    let best = null, bd = Infinity
+    for (const v of this.vehicles) {
+      const d = Math.hypot(v.pos.x - p.x, v.pos.z - p.z) - v.length * 0.35
+      if (d < bd && Math.abs(v.pos.y - p.y) < 3) { bd = d; best = v }
+    }
+    return bd < 2.6 ? best : null
+  }
+
+  enterVehicle(v, silent = false) {
+    this.player.mode = 'vehicle'
+    this.player.vehicle = v
+    this.player.setEnabled(false)
+    v.phys.occupied = true
+    this.lastVehicle = v
+    if (!silent) this.emit('enter', v)
+    this.rig?.setKind(v.type)
+  }
+
+  exitVehicle() {
+    const v = this.active
+    if (!v) return
+    if (v.type === 'heli' && !(v.phys.grounded && v.phys.speed < 2)) {
+      this.emit('notice', 'Land the helicopter before getting out')
+      return
+    }
+    if (v.type !== 'heli' && Math.abs(v.phys.speed) > 4) {
+      this.emit('notice', 'Slow down to get out')
+      return
+    }
+    const spot = this.player.exitSpot(v)
+    v.phys.occupied = false
+    this.player.mode = 'foot'
+    this.player.vehicle = null
+    this.player.setEnabled(true)
+    const heading = new THREE.Euler().setFromQuaternion(v.quat, 'YXZ').y
+    this.player.placeAt(spot.x, spot.y, spot.z, heading)
+    this.player.char.drive = this.player.char.ride = 0
+    this.player.char.lean = 0
+    this.rig.setKind('foot')
+    this.rig.yaw = heading
+    this.emit('exit', v)
+  }
+
+  toggleVehicle() {
+    if (this.active) return this.exitVehicle()
+    const v = this.nearbyVehicle()
+    if (v) this.enterVehicle(v)
+  }
+
   respawn() {
-    const q = this.layout.queryRoad(this.carPos.x, this.carPos.z)
-    let idx = q.i >= 0 ? q.i : this.layout.roadCount - 14
-    if (this.layout.isOnBridge(idx)) idx = (idx - this.layout.bridge.halfSamples - 20 + this.layout.roadCount) % this.layout.roadCount
-    const f = this.layout.roadFrame(idx)
-    this.vehicle.reset(f)
+    const v = this.active
+    if (!v) {
+      const q = this.layout.queryRoad(this.player.pos.x, this.player.pos.z)
+      const side = WORLD.roadHalfWidth + 1.2
+      this.player.placeAt(this.layout.roadX[q.i] - this.layout.roadTZ[q.i] * side, this.layout.roadH[q.i] + 0.2, this.layout.roadZ[q.i] + this.layout.roadTX[q.i] * side)
+      return
+    }
+    if (v.type === 'heli') {
+      const p = v.phys.position
+      const heading = new THREE.Euler().setFromQuaternion(v.quat, 'YXZ').y
+      v.phys.reset({ x: p.x, y: Math.max(p.y, this.layout.getDriveHeight(p.x, p.z)) + 0.5, z: p.z, heading })
+    } else {
+      const { fwd } = v.phys.basis()
+      const f = this.frameNear(v.pos.x, v.pos.z, Math.atan2(fwd.x, fwd.z))
+      v.phys.reset(f)
+    }
     this.physics.sync(1)
     this.emit('respawn')
   }
 
   fixedUpdate(dt, warmup = false) {
-    const vp = this.vehicle
-    const p = vp.position
-    // Surface under each wheel (road / wood / dirt) drives grip, dust and audio
-    for (let i = 0; i < 4; i++) {
-      const s = vp.wheelState(i)
-      if (!s.point || !s.contact) continue
-      const q = this.layout.queryRoad(s.point.x, s.point.z)
-      if (q.d < WORLD.roadHalfWidth + 0.3) vp.wheelSurface[i] = this.layout.isOnBridge(q.i) ? 'wood' : 'road'
-      else {
-        const ground = this.layout.getHeight(s.point.x, s.point.z)
-        vp.wheelSurface[i] = s.point.y - ground > 0.25 ? 'wood' : 'dirt'
+    const active = this.active
+    for (const v of this.vehicles) {
+      const vp = v.phys
+      const p = vp.position
+      const mine = v === active && !warmup
+      if (v.type === 'heli') {
+        vp.update(dt, mine ? this.input.heli : { collective: 0, pitch: 0, bank: 0, yaw: 0 }, {})
+        continue
       }
+      // Surface under each wheel (road / dirt / deck) drives grip, dust and audio
+      for (let i = 0; i < 4; i++) {
+        const s = vp.wheelState(i)
+        if (!s.point || !s.contact) continue
+        const q = this.layout.queryRoad(s.point.x, s.point.z)
+        if (q.d < WORLD.roadHalfWidth + WORLD.sidewalk + 0.3) vp.wheelSurface[i] = 'road'
+        else {
+          const ground = this.layout.getHeight(s.point.x, s.point.z)
+          vp.wheelSurface[i] = s.point.y - ground > 0.25 ? 'wood' : 'dirt'
+        }
+      }
+      const input = mine ? this.input.state : { throttle: 0, brake: 0, steer: 0, handbrake: true, boost: false }
+      vp.update(dt, input, { wet: U.uWet.value, waterLevel: WORLD.waterLevel, overWater: this.layout.isWater(p.x, p.z) })
     }
-    const input = warmup ? { throttle: 0, brake: 0, steer: 0, handbrake: false, boost: false } : this.input.state
-    vp.update(dt, input, { wet: U.uWet.value, waterLevel: WORLD.waterLevel, overWater: this.layout.isWater(p.x, p.z) })
+    if (!active && !warmup) this.player.updateFoot(dt, this.input.foot, this.rig.forwardYaw())
     this.physics.step(dt)
 
-    if (warmup) return
+    if (warmup || !active) return
     // Recovery: flipped, sunk or fell out of the world
+    const vp = active.phys
+    const p = vp.position
     if (vp.flippedTime > 2.2 || vp.inWater > 2.2 || p.y < -12) this.respawn()
   }
 
@@ -226,14 +442,38 @@ export class Game {
     this.tweens.update(dt)
     this.dayCycle.update(dt)
 
+    for (const v of this.vehicles) {
+      if (v.type === 'heli') v.visual.update(dt, v.pos, v.quat, elapsed)
+      else v.visual.update(dt, v.pos, v.quat)
+    }
+    const active = this.active
     const vp = this.vehicle
-    const lv = vp.body.linvel()
-    this.visual.update(dt, this.carPos, this.carQuat)
-    this.rig.update(dt, this.carPos, this.carQuat, lv, vp.speed, vp.boosting)
-    this.effects.update(dt, vp, this.visual)
+    let lv
+    if (active) {
+      lv = active.phys.body.linvel()
+      this.player.updateSeated(active, dt)
+      this.carPos.copy(active.pos)
+      this.carQuat.copy(active.quat)
+      const heading = new THREE.Euler().setFromQuaternion(active.quat, 'YXZ').y
+      this.rig.update(dt, { pos: active.type === 'heli' ? active.pos.clone().setY(active.pos.y + 1) : active.pos, quat: active.quat, vel: lv, speed: Math.abs(active.phys.speed), boosting: active.phys.boosting, body: active.phys.body, heading })
+    } else {
+      lv = this.player.vel
+      this.carPos.copy(this.player.pos)
+      this.carQuat.setFromAxisAngle(new THREE.Vector3(0, 1, 0), this.player.heading)
+      this.rig.update(dt, { pos: this.player.pos, quat: this.carQuat, vel: lv, speed: this.player.speed, boosting: false, body: this.player.body, heading: this.player.heading })
+    }
+    this.effects.update(dt, active && active.type !== 'heli' ? active.phys : null, active?.visual, active?.type === 'heli' ? active.phys : null)
     U.uCarPos.value.copy(this.carPos)
     U.uCarVel.value.set(lv.x, lv.y, lv.z)
     U.uFocus.value.copy(this.rig.focus)
+    // interaction prompt
+    this.promptTimer = (this.promptTimer || 0) - dt
+    if (this.promptTimer <= 0) {
+      this.promptTimer = 0.2
+      const near = !active ? this.nearbyVehicle() : null
+      const start = this.activities.nearStart(this.carPos)
+      this.emit('prompt', active ? active : null, near, start)
+    }
 
     // Atmosphere
     const b = this.seasons.base
@@ -273,14 +513,50 @@ export class Game {
     for (const light of this.lanternLights) light.intensity = night * 14
 
     // Gameplay
+    this.town.update(this.dayCycle.time, night)
+    this.airport.update(elapsed, night, U.uWindDir.value)
+    this.aviation.update(Math.min(dt, 0.05), elapsed)
+    // People: threat = the player's vehicle
+    const cc = this.crowdCtx.car
+    cc.x = this.carPos.x; cc.y = this.carPos.y; cc.z = this.carPos.z
+    cc.vx = lv.x; cc.vz = lv.z
+    cc.speed = active && (active.type !== 'heli' || active.phys.altitude < 1.5) ? Math.hypot(lv.x, lv.z) : 0
+    if (!active) {
+      // people step aside for the player on foot
+      const p = this.player.pos
+      for (const c of this.people.walkers) {
+        const dx = c.x - p.x, dz = c.z - p.z, d2 = dx * dx + dz * dz
+        if (d2 < 0.64 && d2 > 1e-4) {
+          const d = Math.sqrt(d2), push = (0.8 - d) * 0.5
+          c.x += (dx / d) * push
+          c.z += (dz / d) * push
+        }
+      }
+    }
+    this.people.update(Math.min(dt, 0.05), elapsed, this.crowdCtx)
+    let vinfo = null
+    if (active) {
+      const r = active.type === 'car' ? 1.3 : active.type === 'bike' ? 0.7 : 2.2
+      vinfo = { x: this.carPos.x, y: this.carPos.y + (active.type === 'heli' ? 1 : 0.5), z: this.carPos.z, vx: lv.x, vz: lv.z, speed: Math.hypot(lv.x, lv.z), r, h: active.type === 'heli' ? 1.6 : 1.0, mass: active.phys.mass }
+    }
+    this.construction.update(Math.min(dt, 0.05), elapsed, this.crowdCtx, vinfo)
+    this.traffic.update(Math.min(dt, 0.05), { player: active ? { x: this.carPos.x, z: this.carPos.z } : { x: this.player.pos.x, z: this.player.pos.z }, walkers: this.people.walkers })
+    this.crowd.focus.set(this.camera.position.x, 0, this.camera.position.z)
+    this.crowd.update(elapsed)
+    this.emotes.update(dt)
+    this.activities.update(Math.min(dt, 0.05), elapsed, this.actCtx)
+    this.activities.checkWaypoint(this.carPos)
     if (this.started) {
-      this.circuit.update(elapsed, this.carPos)
       this.collectibles.update(dt, elapsed, this.carPos)
     } else this.collectibles.update(dt, elapsed, new THREE.Vector3(1e4, 0, 0))
 
     this.updateEnvironment()
     this.emit('frame', dt)
     vp.landing = 0
+  }
+
+  get onFoot() {
+    return !this.active
   }
 
   updateEnvironment(force = false) {
@@ -298,7 +574,7 @@ export class Game {
   }
 
   get speedKmh() {
-    return Math.abs(this.vehicle.speed) * 3.6
+    return this.active ? Math.abs(this.active.phys.speed) * 3.6 : this.player.speed * 3.6
   }
 
   setQualityTiltShift(on) {

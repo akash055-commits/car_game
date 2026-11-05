@@ -120,24 +120,32 @@ export class EngineSynth {
     this.noise.start(t)
     this.level = 1
     this.dip = 0
+    this.redline = 7000
+    this.voiceGain = 1
+  }
+
+  // 'car' (buggy four) or 'bike' (high-revving sport bike: brighter, a touch quieter)
+  setVoice(kind) {
+    this.redline = kind === 'bike' ? 11000 : 7000
+    this.voiceGain = kind === 'bike' ? 0.8 : 1
   }
 
   // rpm, load (0..1 engine load), throttle (0..1), wheelSpeed (m/s), gear, limiter
   update({ rpm, throttle, load, speed = 0, gear = 1, limiter = false, shift = 0 }, t = this.ctx.currentTime, tc = 0.04) {
     const f = (rpm / 60) * 2
-    const r = Math.min(rpm / 7000, 1.1)
+    const r = Math.min(rpm / this.redline, 1.1)
     this.osc1.frequency.setTargetAtTime(f, t, tc)
     this.osc2.frequency.setTargetAtTime(f * 1.0035, t, tc)
     this.sub.frequency.setTargetAtTime(f * 0.5, t, tc)
     this.noiseBand.frequency.setTargetAtTime(f * 3.2 + 200, t, tc)
 
-    const cutoff = 320 + rpm * 0.18 + throttle * (900 + 2600 * r)
+    const cutoff = 320 + rpm * 0.18 * (7000 / this.redline) + throttle * (900 + 2600 * r)
     this.lowpass.frequency.setTargetAtTime(cutoff, t, tc * 1.5)
     this.drive.gain.setTargetAtTime(0.7 + throttle * 2.4 + load * 0.6, t, tc)
     this.body.frequency.setTargetAtTime(110 + r * 90, t, 0.1)
     this.noiseGain.gain.setTargetAtTime(0.025 + throttle * 0.11 * (0.3 + r), t, tc)
 
-    let gain = (0.13 + throttle * 0.07 + r * 0.08) * this.level
+    let gain = (0.13 + throttle * 0.07 + r * 0.08) * this.level * this.voiceGain
     if (limiter) gain *= Math.sin(t * 2 * Math.PI * 14) > 0 ? 1 : 0.35
     if (shift) gain *= 0.45
     this.out.gain.setTargetAtTime(gain, t, shift ? 0.02 : tc)

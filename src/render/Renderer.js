@@ -23,7 +23,7 @@ export class Renderer {
     this.renderer = r
 
     this.scene = new THREE.Scene()
-    this.camera = new THREE.PerspectiveCamera(32, window.innerWidth / window.innerHeight, 0.5, 1200)
+    this.camera = new THREE.PerspectiveCamera(32, window.innerWidth / window.innerHeight, 0.3, 2600)
 
     const size = r.getDrawingBufferSize(new THREE.Vector2())
     const target = new THREE.WebGLRenderTarget(size.x, size.y, {

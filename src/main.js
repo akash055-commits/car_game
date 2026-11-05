@@ -8,6 +8,8 @@ import { TouchControls } from './ui/TouchControls.js'
 import { formatTime } from './gameplay/Circuit.js'
 import { SEASONS } from './atmosphere/Seasons.js'
 import { saveQuality } from './core/Quality.js'
+import { Minimap } from './ui/Minimap.js'
+import { ACTIVITY_INFO } from './gameplay/Activities.js'
 
 const app = document.getElementById('app')
 const ui = new UI()
@@ -29,6 +31,8 @@ game
     ui.setSeason(game.seasons.current)
     ui.setNight(false)
     ui.setEmbers(game.collectibles.count, game.collectibles.total)
+    ui.setCoins(game.activities.coins)
+    audio.season = game.seasons.current
     ui.setMusic(!audio.settings.musicMuted)
     ui.setSound(!audio.settings.muted)
     ui.ready()
@@ -40,15 +44,20 @@ game
   })
 
 let started = false
+let minimap = null
 function wire() {
+  const listener = () => game.camera.position
+  const dist = (x, z) => Math.hypot(x - listener().x, z - listener().z)
   ui.on('start', () => {
     if (started) return
     started = true
     audio.start()
     ui.hideLoader()
     game.start()
-    if (game.quality.isTouch) new TouchControls(game.input, game.rig, game.renderer.renderer.domElement)
-    setTimeout(() => ui.toast(`Welcome to <em>${SEASONS[game.seasons.current].label}</em> in the valley`), 900)
+    if (game.quality.isTouch) game.touch = new TouchControls(game.input, game.rig, game.renderer.renderer.domElement)
+    minimap = new Minimap(ui.hud, game)
+    setTimeout(() => ui.toast(`Welcome to Maple Hollow · <em>${SEASONS[game.seasons.current].label}</em>`), 900)
+    setTimeout(() => ui.toast('Press <kbd>J</kbd> for activities · <kbd>F</kbd> to get out and walk', { duration: 4200 }), 3600)
   })
 
   // Toolbar / settings
@@ -94,11 +103,17 @@ function wire() {
     return false
   })
   ui.on('setting:reset-best', () => {
-    game.circuit.best = null
-    try { localStorage.removeItem('sv-best-lap') } catch {}
-    ui.toast('Best lap cleared')
+    game.activities.best = {}
+    game.activities.save()
+    ui.toast('Activity records cleared')
     return false
   })
+  ui.on('activities', () => ui.openActivities(game.activities))
+  ui.on('route', (id) => {
+    game.activities.route(id)
+    ui.toast(`Follow the arrow to <em>${ACTIVITY_INFO[id].name}</em>`, { duration: 2200 })
+  })
+  ui.on('promptTap', (key) => game.input.emit('press', `Key${key}`))
   ui.on('quality', (q) => {
     saveQuality(q)
     location.reload()
@@ -106,6 +121,7 @@ function wire() {
 
   // Game -> UI / audio
   game.on('season', (name) => {
+    audio.setSeason(name)
     ui.setSeason(name)
     ui.toast(`<em>${SEASONS[name].label}</em>`, { duration: 1800 })
     audio.sfx?.whoosh()
@@ -123,32 +139,103 @@ function wire() {
     audio.sfx?.complete()
     ui.toast('All embers found. The valley glows for you ✦', { big: true, duration: 5000 })
   })
-  game.on('lapStart', (lap) => { if (lap === 1) ui.toast('Lap started. Go!', { duration: 1500 }) })
-  game.on('checkpoint', (n, t) => {
+  game.on('openActivities', () => ui.openActivities(game.activities))
+  game.on('prompt', (active, near, start) => {
+    if (start) return ui.prompt('G', `Start ${ACTIVITY_INFO[start.id].name}`)
+    if (active?.type === 'heli' && (active.phys.state === 'off' || active.phys.state === 'stopping')) return ui.prompt('I', 'Start the engine')
+    if (active?.type === 'heli' && active.phys.state === 'running' && active.phys.grounded && Math.abs(active.phys.speed) < 1) return ui.prompt('F', 'Get out · I to shut down')
+    if (near) return ui.prompt('F', near.type === 'heli' ? 'Fly the helicopter' : near.type === 'bike' ? 'Ride the motorbike' : 'Drive the buggy')
+    ui.prompt(null)
+  })
+  game.on('enter', (v) => {
+    audio.sfx?.door(true)
+    if (v.type === 'heli' && v.phys.state === 'off') ui.toast('Press <kbd>I</kbd> to start the engine, then hold <kbd>Space</kbd> to lift off', { duration: 3600 })
+  })
+  game.on('exit', () => audio.sfx?.door(false))
+  game.on('notice', (text) => ui.toast(text, { duration: 2200 }))
+  game.on('ignition', (state) => {
+    if (state === 'starting') {
+      audio.sfx?.starter()
+      ui.toast('Engine starting… wait for full rotor speed', { duration: 2600 })
+    } else ui.toast('Engine shutting down', { duration: 1800 })
+  })
+  game.on('footstep', (k, surf) => audio.sfx?.footstep(surf, k > 0.6))
+  game.on('voice', (kind, x, z) => audio.sfx?.voice(kind, dist(x, z)))
+  game.on('hammer', (x, z) => audio.sfx?.hammer(dist(x, z)))
+  game.on('honk', (x, z) => audio.sfx?.honk(dist(x, z)))
+  let lastSmash = 0
+  game.on('siteSmash', (site, n) => {
+    audio.sfx?.smash(dist(site.x, site.z))
+    const now = performance.now()
+    if (now - lastSmash > 6000 && n > 2) {
+      lastSmash = now
+      ui.toast(`You knocked down part of the <em>${site.name}</em>. The builders sigh and start again.`, { duration: 3200 })
+    }
+  })
+  game.on('siteComplete', (site) => {
+    if (dist(site.x, site.z) < 140) {
+      audio.sfx?.fanfare()
+      ui.toast(`The <em>${site.name}</em> is finished! Everyone cheers`, { duration: 3200 })
+    }
+  })
+
+  // Activities
+  const fmtCoins = (n) => `<em>+${n}</em> coins`
+  game.on('act:start', (id) => {
     audio.sfx?.checkpoint()
-    ui.toast(`Checkpoint ${n}/6 <em>${formatTime(t)}</em>`, { duration: 1500 })
+    ui.toast(`<em>${ACTIVITY_INFO[id].name}</em> · ${ACTIVITY_INFO[id].blurb}`, { big: true, duration: 3600 })
   })
-  game.on('lap', (t, best) => {
+  game.on('act:end', (id, reason) => {
+    if (reason === 'quit') {
+      audio.sfx?.invalid()
+      ui.toast(`${ACTIVITY_INFO[id].name} cancelled`, { duration: 1800 })
+    }
+  })
+  game.on('act:objective', (a) => {
+    if (a.id !== 'rally' || a.next === 0) audio.sfx?.click()
+  })
+  game.on('act:coins', (n, total) => {
+    audio.sfx?.coin(n)
+    ui.setCoins(total, true)
+  })
+  game.on('act:toast', (text) => ui.toast(text, { duration: 2400 }))
+  game.on('act:countdown', (n) => {
+    audio.sfx?.beep(n === 0)
+    ui.countdown(n)
+  })
+  game.on('act:checkpoint', (n, total, t) => {
+    audio.sfx?.checkpoint()
+    ui.toast(`Hoop ${n}/${total} <em>${formatTime(t)}</em>`, { duration: 1300 })
+  })
+  game.on('act:rallyDone', (t, medal, best) => {
     audio.sfx?.lap(best)
-    ui.toast(best ? `New best lap <em>${formatTime(t)}</em>` : `Lap <em>${formatTime(t)}</em>`, { big: true, duration: 3200 })
+    const m = medal ? `${medal[0].toUpperCase()}${medal.slice(1)} medal` : 'Finished'
+    ui.toast(`${m} · <em>${formatTime(t)}</em>${best ? ' · new record!' : ''}`, { big: true, duration: 4200 })
   })
-  game.on('lapInvalid', () => {
-    audio.sfx?.invalid()
-    ui.toast('Missed a checkpoint. New lap started', { duration: 2200 })
+  game.on('act:delivered', (step, total) => ui.toast(`Parcel delivered ${step}/${total}`, { duration: 1600 }))
+  game.on('act:fare', (fare, tip, step, total) => ui.toast(`Fare ${step}/${total}: ${fmtCoins(fare)}${tip > 0 ? ` + ${tip} tip` : ''}`, { duration: 2200 }))
+  game.on('act:summary', (id, coins, best) => {
+    audio.sfx?.lap(best)
+    ui.toast(`${ACTIVITY_INFO[id].name} complete · ${fmtCoins(coins)}${best ? ' · new record!' : ''}`, { big: true, duration: 4200 })
   })
+  game.on('act:passengerUpset', () => ui.toast('Your passenger did not enjoy that. Tip shrinking!', { duration: 1800 }))
   game.on('thunder', (delay) => audio.sfx?.thunder(delay))
   game.on('respawn', () => audio.sfx?.click())
   audio.music.onTrack = (name) => ui.nowPlaying(name)
 
-  game.input.on('press', (code) => { if (code === 'KeyH') audio.sfx?.hornOn() })
+  game.input.on('press', (code) => { if (code === 'KeyH' && game.active && game.active.type !== 'heli') { audio.sfx?.hornOn(); game.honk() } })
   window.addEventListener('keyup', (e) => { if (e.code === 'KeyH') audio.sfx?.hornOff() })
 
   // Per-frame HUD + audio
   const lake = game.layout.lake
+  const heli = game.vehicles.find((v) => v.type === 'heli')
   game.on('frame', (dt) => {
     ui.update(game)
+    minimap?.draw()
+    game.touch?.setMode(game.active ? game.active.type : 'foot')
     if (!audio.ctx) return
-    const dx = lake.x - game.carPos.x, dz = lake.z - game.carPos.z
+    const cam = game.camera.position
+    const dx = lake.x - cam.x, dz = lake.z - cam.z
     const shoreDist = Math.max(0, Math.hypot(dx, dz) - lake.r)
     // pan: project lake direction onto the camera's right vector
     const right = { x: game.camera.matrixWorld.elements[0], z: game.camera.matrixWorld.elements[2] }
@@ -156,7 +243,10 @@ function wire() {
     const pan = Math.max(-1, Math.min(1, (dx * right.x + dz * right.z) / len))
     const U = game.uniforms
     audio.update(dt, {
-      vehicle: game.vehicle,
+      active: game.active,
+      heli,
+      listener: cam,
+      planes: game.aviation.planes,
       wet: U.uWet.value,
       ambience: {
         autumn: U.uAutumn.value, spring: U.uSpring.value, rain: U.uRain.value, night: U.uNight.value,

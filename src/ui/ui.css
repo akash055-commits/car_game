@@ -71,7 +71,7 @@ kbd {
 .panel { background: var(--paper); backdrop-filter: blur(14px) saturate(1.2); -webkit-backdrop-filter: blur(14px) saturate(1.2); border-radius: var(--radius); box-shadow: var(--shadow); border: 1px solid rgba(255, 255, 255, 0.5); }
 
 .lap {
-  position: absolute; top: calc(16px + var(--safe-top)); left: calc(16px + var(--safe-left));
+  position: absolute; top: calc(16px + var(--safe-top)); left: calc(16px + var(--safe-left)); box-sizing: border-box;
   padding: 12px 16px 12px; min-width: 168px;
 }
 .lap .label { font-size: 11px; font-weight: 800; letter-spacing: 0.12em; color: var(--ink-soft); text-transform: uppercase; display: flex; justify-content: space-between; gap: 10px; }
@@ -83,14 +83,70 @@ kbd {
 .dots i.on { background: var(--accent); }
 .dots i.next { background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent); }
 
-.embers {
+.pills {
   position: absolute; top: calc(16px + var(--safe-top)); left: 50%; transform: translateX(-50%);
-  display: flex; align-items: center; gap: 8px; padding: 8px 15px 8px 11px; font-weight: 800; font-size: 15px; font-variant-numeric: tabular-nums;
+  display: flex; gap: 8px; align-items: center;
 }
-.embers svg { width: 20px; height: 20px; }
+.pills .panel { display: flex; align-items: center; gap: 8px; padding: 8px 15px 8px 11px; font-weight: 800; font-size: 15px; font-variant-numeric: tabular-nums; }
+.pills svg { width: 20px; height: 20px; }
+.embers svg { color: var(--accent); }
+.coins svg { color: #e2a32b; }
 .embers .of { color: var(--ink-soft); font-weight: 600; }
-.embers.pulse { animation: pulse 0.6s ease; }
-@keyframes pulse { 40% { transform: translateX(-50%) scale(1.12); } }
+.pills .pulse { animation: pulse 0.6s ease; }
+@keyframes pulse { 40% { transform: scale(1.14); } }
+
+/* activity panel (top-left) */
+.activity { min-width: 210px; max-width: 270px; border-left: 4px solid var(--accent); }
+.activity .act-goal { font-weight: 800; font-size: 14px; line-height: 1.25; margin-top: 5px; }
+.activity .act-time { font-size: 26px; margin-top: 4px; }
+.activity .act-time.late { color: #d6452f; animation: blink 0.8s steps(2) infinite; }
+@keyframes blink { 50% { opacity: 0.45; } }
+.act-bar { height: 5px; border-radius: 99px; background: var(--line); overflow: hidden; margin-top: 6px; }
+.act-bar i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: inherit; transition: width 0.25s linear; }
+
+/* context prompt ("F  Drive the buggy") */
+.prompt {
+  position: absolute; left: 50%; bottom: calc(72px + var(--safe-bottom)); transform: translateX(-50%);
+  display: flex; align-items: center; gap: 10px; padding: 8px 16px 8px 9px; font-weight: 800; font-size: 15px;
+  pointer-events: auto; cursor: pointer; animation: toastIn 0.25s ease both; white-space: nowrap;
+}
+.prompt kbd { min-width: 30px; height: 30px; font-size: 14px; border-radius: 9px; background: var(--accent); color: #fff; box-shadow: 0 3px 0 rgba(80, 30, 10, 0.35); }
+
+/* race countdown */
+.countdown {
+  position: absolute; left: 50%; top: 38%; transform: translate(-50%, -50%);
+  font-weight: 800; font-size: clamp(64px, 12vw, 120px); color: #fffaf2; letter-spacing: -0.03em;
+  text-shadow: 0 6px 30px rgba(60, 25, 5, 0.55), 0 0 2px rgba(60, 25, 5, 0.6);
+}
+.countdown.pop { animation: cdPop 0.9s ease both; }
+@keyframes cdPop { 0% { opacity: 0; transform: translate(-50%, -50%) scale(1.6); } 25% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 80% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -50%) scale(0.9); } }
+
+/* minimap (bottom-left, GTA style) */
+.minimap {
+  position: absolute; left: calc(16px + var(--safe-left)); bottom: calc(16px + var(--safe-bottom));
+  width: 176px; height: 176px; border-radius: 50%; padding: 0; overflow: hidden; pointer-events: auto; cursor: zoom-in;
+  border: 3px solid rgba(255, 250, 242, 0.92); transition: width 0.3s ease, height 0.3s ease, border-radius 0.3s ease;
+}
+.minimap canvas { width: 100%; height: 100%; display: block; }
+.minimap .mm-n {
+  position: absolute; left: 50%; top: 50%; width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--ink); color: #fff8ee; font-size: 10px; font-weight: 800; pointer-events: none;
+}
+.minimap.big {
+  width: min(78vw, 78vh); height: min(78vw, 78vh); border-radius: 22px; left: 50%; bottom: 50%; transform: translate(-50%, 50%);
+  cursor: zoom-out; z-index: 4;
+}
+.minimap.big .mm-n { left: 26px; top: 26px; }
+
+/* activities menu */
+.coin-total { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--ink-soft); margin: -4px 0 14px; }
+.coin-total svg { width: 20px; height: 20px; color: #e2a32b; }
+.coin-total b { color: var(--ink); font-size: 18px; }
+.act-card { border: 1px solid var(--line); border-left: 5px solid var(--c); border-radius: 14px; padding: 12px 14px; margin: 10px 0; background: #fff; }
+.act-card .act-top { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+.act-card .act-top b { font-size: 15px; }
+.act-card .act-top span { font-size: 12px; color: var(--ink-soft); font-weight: 700; }
+.act-card p { margin: 6px 0 10px; font-size: 13px; color: var(--ink-soft); line-height: 1.4; }
 
 .toolbar {
   position: absolute; top: calc(16px + var(--safe-top)); right: calc(16px + var(--safe-right));
@@ -112,7 +168,7 @@ kbd {
   background: var(--ink); color: #fff8ee; font-size: 12px; font-weight: 700; padding: 5px 9px; border-radius: 8px; pointer-events: none;
 }
 
-.speedo { position: absolute; left: calc(16px + var(--safe-left)); bottom: calc(16px + var(--safe-bottom)); width: 150px; height: 150px; border-radius: 50%; display: grid; place-items: center; }
+.speedo { position: absolute; right: calc(16px + var(--safe-right)); bottom: calc(16px + var(--safe-bottom)); width: 150px; height: 150px; border-radius: 50%; display: grid; place-items: center; }
 .speedo svg { position: absolute; inset: 0; width: 100%; height: 100%; }
 .speedo .track { fill: none; stroke: var(--line); stroke-width: 9; stroke-linecap: round; }
 .speedo .value { fill: none; stroke: var(--accent); stroke-width: 9; stroke-linecap: round; transition: stroke 0.4s; }
@@ -126,7 +182,7 @@ kbd {
 .speedo .boost.on { opacity: 1; }
 
 .now-playing {
-  position: absolute; right: calc(16px + var(--safe-right)); bottom: calc(16px + var(--safe-bottom));
+  position: absolute; right: calc(16px + var(--safe-right)); bottom: calc(180px + var(--safe-bottom));
   display: flex; align-items: center; gap: 10px; padding: 9px 14px 9px 10px; font-size: 13px; pointer-events: auto;
   transition: opacity 0.6s, transform 0.6s; max-width: 70vw;
 }
@@ -138,7 +194,8 @@ kbd {
 @keyframes spin { to { transform: rotate(360deg); } }
 
 .toasts { position: absolute; top: calc(70px + var(--safe-top)); left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 8px; }
-.toast { padding: 9px 16px; font-weight: 800; font-size: 14px; animation: toastIn 0.35s ease both; white-space: nowrap; }
+.toast { padding: 9px 16px; font-weight: 800; font-size: 14px; animation: toastIn 0.35s ease both; max-width: min(560px, 86vw); text-align: center; line-height: 1.35; box-sizing: border-box; }
+.toast kbd { background: var(--ink); color: #fff8ee; box-shadow: none; height: 20px; min-width: 20px; }
 .toast.big { font-size: 18px; padding: 12px 20px; }
 .toast em { font-style: normal; color: var(--accent); }
 .toast.out { animation: toastOut 0.45s ease both; }
@@ -192,13 +249,27 @@ input[type='range']::-moz-range-thumb { width: 16px; height: 16px; border-radius
 }
 .tbtn svg { width: 24px; height: 24px; margin-bottom: -6px; }
 .tbtn.down { background: var(--accent); color: #fff; border-color: var(--accent); }
-.tbtn.gas { grid-column: 2; grid-row: 1 / span 2; height: 160px; border-radius: 40px; }
+.tbtn.gas, .tbtn.jump { grid-column: 2; grid-row: 1 / span 2; height: 160px; border-radius: 40px; }
+.tbtn.boost, .tbtn.up { grid-column: 1; grid-row: 1; }
+.m-heli .tbtn.up { grid-column: 2; }
+.tbtn.drift, .tbtn.run, .tbtn.engine { grid-column: 1; grid-row: 2; }
+.tbtn.down { grid-column: 2; grid-row: 2; }
+.m-foot .tbtn.run { grid-row: 2; }
+.tbtn.exit { position: absolute; right: 0; top: -70px; width: 56px; height: 56px; font-size: 10px; background: rgba(47, 33, 24, 0.55); color: #fff8ee; }
+.tbtn.engine { font-size: 10px; }
 
 body.touch-mode .hint, body.touch-mode .now-playing, body.touch-mode .desk-only { display: none !important; }
 body.touch-mode .lap { padding: 9px 12px; min-width: 0; }
 body.touch-mode .lap .time { font-size: 21px; }
 body.touch-mode .lap .rows { font-size: 11.5px; }
-body.touch-mode .embers { padding: 6px 11px 6px 8px; font-size: 13px; animation: none; }
+body.touch-mode .pills .panel { padding: 6px 11px 6px 8px; font-size: 13px; }
+body.touch-mode .pills svg { width: 17px; height: 17px; }
+body.touch-mode .minimap { left: calc(12px + var(--safe-left)); top: calc(12px + var(--safe-top)); bottom: auto; width: 112px; height: 112px; border-width: 2px; }
+body.touch-mode .minimap.big { top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(86vw, 80vh); height: min(86vw, 80vh); }
+body.touch-mode .activity { top: calc(132px + var(--safe-top)); left: calc(12px + var(--safe-left)); min-width: 0; max-width: 200px; }
+body.touch-mode .activity .act-goal { font-size: 12.5px; }
+body.touch-mode .activity .act-time { font-size: 20px; }
+body.touch-mode .prompt { bottom: auto; top: 58%; font-size: 14px; }
 body.touch-mode .speedo { left: auto; right: calc(14px + var(--safe-right)); bottom: auto; top: calc(118px + var(--safe-top)); width: 108px; height: 108px; }
 body.touch-mode .speedo .kmh { font-size: 28px; }
 body.touch-mode .speedo .gear { bottom: 8px; font-size: 11px; }
@@ -206,15 +277,19 @@ body.touch-mode .speedo .boost { top: 18px; }
 
 @media (orientation: landscape) {
   body.touch-mode .speedo { top: auto; right: auto; left: 50%; transform: translateX(-50%); bottom: calc(12px + var(--safe-bottom)); width: 104px; height: 104px; }
-  body.touch-mode .embers { top: calc(150px + var(--safe-top)); bottom: auto; left: calc(16px + var(--safe-left)); transform: none; }
+  body.touch-mode .pills { top: calc(12px + var(--safe-top)); }
+  body.touch-mode .activity { top: calc(12px + var(--safe-top)); left: calc(136px + var(--safe-left)); }
   body.touch-mode .toasts { top: calc(78px + var(--safe-top)); }
   body.touch-mode .stick { width: 124px; height: 124px; bottom: calc(18px + var(--safe-bottom)); }
   body.touch-mode .touch-btns { bottom: calc(18px + var(--safe-bottom)); grid-template-columns: 66px 66px; }
   body.touch-mode .tbtn { width: 66px; height: 66px; }
-  body.touch-mode .tbtn.gas { height: 144px; }
+  body.touch-mode .tbtn.gas, body.touch-mode .tbtn.jump { height: 144px; }
+  body.touch-mode .tbtn.exit { width: 50px; height: 50px; top: -60px; }
 }
 @media (orientation: portrait) {
   body.touch-mode .toasts { top: calc(240px + var(--safe-top)); }
+  body.touch-mode .pills { top: calc(132px + var(--safe-top)); left: calc(12px + var(--safe-left)); transform: none; flex-direction: column; align-items: flex-start; gap: 6px; }
+  body.touch-mode .activity { top: calc(212px + var(--safe-top)); }
 }
 
 @media (max-width: 720px) {
@@ -222,12 +297,17 @@ body.touch-mode .speedo .boost { top: 18px; }
   .lap { padding: 9px 12px; min-width: 0; }
   .lap .time { font-size: 21px; }
   .lap .rows { font-size: 11.5px; }
-  .embers { top: auto; bottom: calc(184px + var(--safe-bottom)); left: calc(16px + var(--safe-left)); transform: none; padding: 6px 11px 6px 8px; font-size: 13px; }
-  .embers.pulse { animation: none; }
+  .pills { top: calc(64px + var(--safe-top)); }
+  .pills .panel { padding: 6px 11px 6px 8px; font-size: 13px; }
+  .minimap { width: 132px; height: 132px; }
+  .speedo { width: 120px; height: 120px; }
+  .speedo .kmh { font-size: 30px; }
+  .activity { top: calc(110px + var(--safe-top)); max-width: 200px; min-width: 0; }
   .toolbar { max-width: 52vw; gap: 6px; }
   .icon-btn { width: 36px; height: 36px; }
   .icon-btn svg { width: 19px; height: 19px; }
-  .toasts { top: calc(100px + var(--safe-top)); }
+  .toasts { top: calc(110px + var(--safe-top)); }
+  .hint { display: none; }
   .toast { font-size: 13px; }
   .toast.big { font-size: 15px; }
 }

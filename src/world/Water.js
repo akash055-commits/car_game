@@ -6,7 +6,8 @@ import { U, noiseGLSL } from './Uniforms.js'
 
 export class Water {
   constructor(scene) {
-    const minX = -25, maxX = 92, minZ = -84, maxZ = 24
+    // Covers the park lake, the stream from the north and the river to the east
+    const minX = 52, maxX = 350, minZ = -72, maxZ = 350
     const geo = new THREE.PlaneGeometry(maxX - minX, maxZ - minZ, 1, 1).rotateX(-Math.PI / 2)
     geo.translate((minX + maxX) / 2, WORLD.waterLevel, (minZ + maxZ) / 2)
 

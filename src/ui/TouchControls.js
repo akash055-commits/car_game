@@ -1,22 +1,31 @@
-// On-screen controls for phones / tablets: left joystick (steer + throttle/brake),
-// right buttons (gas, boost, drift) and one-finger drag on the scene to orbit the camera.
+// On-screen controls for phones / tablets. A left joystick plus a right button cluster that
+// changes with what you're doing:
+//   on foot  – stick walks (push far to run), JUMP, RUN
+//   buggy / bike – stick steers + throttle / brake, GAS, BOOST, DRIFT, EXIT
+//   helicopter – stick pitches + turns, UP / DOWN collective, ENGINE, EXIT
+// One-finger drag on the scene orbits the camera. Context actions (get in, start an
+// activity) are taps on the on-screen prompt.
 import { ICONS } from './UI.js'
+
+const LAYOUTS = {
+  foot: [['jump', 'JUMP'], ['run', 'RUN']],
+  car: [['boost', 'BOOST', ICONS.boost], ['gas', 'GAS'], ['drift', 'DRIFT', ICONS.drift], ['exit', 'EXIT']],
+  bike: [['boost', 'BOOST', ICONS.boost], ['gas', 'GAS'], ['drift', 'BRAKE'], ['exit', 'EXIT']],
+  heli: [['up', 'UP'], ['down', 'DOWN'], ['engine', 'ENGINE'], ['exit', 'EXIT']],
+}
 
 export class TouchControls {
   constructor(input, rig, canvas) {
     this.input = input
+    this.mode = null
     document.body.classList.add('touch-mode')
     const el = document.createElement('div')
     el.className = 'touch'
-    el.innerHTML = `
-      <div class="stick"><div class="knob"></div></div>
-      <div class="touch-btns">
-        <div class="tbtn" data-b="boost">${ICONS.boost}<span>BOOST</span></div>
-        <div class="tbtn gas" data-b="gas"><span>GAS</span></div>
-        <div class="tbtn" data-b="drift">${ICONS.drift}<span>DRIFT</span></div>
-      </div>`
+    el.innerHTML = '<div class="stick"><div class="knob"></div></div><div class="touch-btns"></div>'
     document.body.appendChild(el)
     this.el = el
+    this.btns = el.querySelector('.touch-btns')
+    this.stickVec = { x: 0, y: 0 }
 
     // Joystick
     const stick = el.querySelector('.stick')
@@ -28,10 +37,9 @@ export class TouchControls {
       const d = Math.hypot(dx, dy)
       if (d > R) { dx = (dx / d) * R; dy = (dy / d) * R }
       knob.style.transform = `translate(${dx}px, ${dy}px)`
-      const sx = dx / R, sy = dy / R
-      input.touch.steer = -Math.sign(sx) * Math.max(0, Math.abs(sx) - 0.12) / 0.88
-      input.touch.throttle = Math.max(input.touch.gas ? 1 : 0, sy < -0.25 ? Math.min(1, (-sy - 0.25) / 0.6) : 0)
-      input.touch.brake = sy > 0.3 ? Math.min(1, (sy - 0.3) / 0.6) : 0
+      this.stickVec.x = dx / R
+      this.stickVec.y = dy / R
+      this.apply()
     }
     stick.addEventListener('pointerdown', (e) => {
       id = e.pointerId
@@ -47,29 +55,11 @@ export class TouchControls {
       if (e.pointerId !== id) return
       id = null
       knob.style.transform = ''
-      input.touch.steer = 0
-      input.touch.throttle = input.touch.gas ? 1 : 0
-      input.touch.brake = 0
+      this.stickVec.x = this.stickVec.y = 0
+      this.apply()
     }
     stick.addEventListener('pointerup', release)
     stick.addEventListener('pointercancel', release)
-
-    // Buttons
-    el.querySelectorAll('.tbtn').forEach((b) => {
-      const set = (down) => {
-        b.classList.toggle('down', down)
-        const k = b.dataset.b
-        if (k === 'boost') input.touch.boost = down
-        if (k === 'drift') input.touch.handbrake = down
-        if (k === 'gas') {
-          input.touch.gas = down
-          input.touch.throttle = down ? 1 : 0
-        }
-      }
-      b.addEventListener('pointerdown', (e) => { b.setPointerCapture(e.pointerId); set(true); e.preventDefault() })
-      b.addEventListener('pointerup', () => set(false))
-      b.addEventListener('pointercancel', () => set(false))
-    })
 
     // Drag on the scene to orbit
     let orbitId = null, lastX = 0
@@ -87,5 +77,53 @@ export class TouchControls {
     canvas.addEventListener('pointerup', end)
     canvas.addEventListener('pointercancel', end)
     el.addEventListener('contextmenu', (e) => e.preventDefault())
+    this.setMode('car')
+  }
+
+  // Translate the stick into the fields each control scheme reads
+  apply() {
+    const t = this.input.touch
+    const sx = this.stickVec.x, sy = this.stickVec.y
+    const dead = (v, d) => Math.sign(v) * Math.max(0, Math.abs(v) - d) / (1 - d)
+    if (this.mode === 'car' || this.mode === 'bike') {
+      t.steer = -dead(sx, 0.12)
+      t.throttle = Math.max(t.gas ? 1 : 0, sy < -0.25 ? Math.min(1, (-sy - 0.25) / 0.6) : 0)
+      t.brake = Math.max(t.brakeBtn ? 1 : 0, sy > 0.3 ? Math.min(1, (sy - 0.3) / 0.6) : 0)
+    } else {
+      t.moveX = dead(sx, 0.1)
+      t.moveY = -dead(sy, 0.1)
+      if (this.mode === 'foot') t.boost = t.runBtn || Math.hypot(sx, sy) > 0.93
+    }
+  }
+
+  setMode(mode) {
+    if (mode === this.mode) return
+    this.mode = mode
+    // clear everything the previous scheme wrote
+    Object.assign(this.input.touch, { steer: 0, throttle: 0, brake: 0, handbrake: false, boost: false, gas: false, brakeBtn: false, runBtn: false, moveX: 0, moveY: 0, jump: false, up: false, down: false })
+    this.btns.className = `touch-btns m-${mode}`
+    this.btns.innerHTML = LAYOUTS[mode].map(([k, label, icon]) => `<div class="tbtn ${k}" data-b="${k}">${icon || ''}<span>${label}</span></div>`).join('')
+    this.btns.querySelectorAll('.tbtn').forEach((b) => {
+      const k = b.dataset.b
+      const set = (down) => {
+        b.classList.toggle('down', down)
+        const t = this.input.touch
+        if (k === 'boost') t.boost = down
+        if (k === 'drift') { if (mode === 'bike') t.brakeBtn = down; else t.handbrake = down }
+        if (k === 'gas') t.gas = down
+        if (k === 'jump') t.jump = down
+        if (k === 'run') t.runBtn = down
+        if (k === 'up') t.up = down
+        if (k === 'down') t.down = down
+        if (down && k === 'exit') this.input.emit('press', 'KeyF')
+        if (down && k === 'engine') this.input.emit('press', 'KeyI')
+        this.apply()
+      }
+      b.addEventListener('pointerdown', (e) => { b.setPointerCapture(e.pointerId); set(true); e.preventDefault() })
+      b.addEventListener('pointerup', () => set(false))
+      b.addEventListener('pointercancel', () => set(false))
+    })
+    this.stickVec.x = this.stickVec.y = 0
+    this.el.querySelector('.knob').style.transform = ''
   }
 }

@@ -1,5 +1,5 @@
-// Static and dynamic props: lanterns, start arch, bridge, cabin, pier, rocks, fences,
-// ramps, and knockable crates / barrels / cones (physics-synced).
+// Static and dynamic props: street lamps, stone bridges, pier, ramps, benches, rocks,
+// seasonal decor and knockable crates / barrels / cones (physics-synced).
 import * as THREE from 'three'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
 import { WORLD } from './Layout.js'
@@ -50,36 +50,44 @@ function interpApply(mesh, index, scale = null) {
 }
 
 export class Props {
-  constructor(scene, physics, layout) {
+  constructor(scene, physics, layout, town) {
     this.scene = scene
     this.physics = physics
     this.layout = layout
+    this.town = town
     this.R = physics.RAPIER
     this.rnd = makeRandom(42)
     this.lanterns = [] // world positions of lantern lights
-    this.windows = []
 
     this.mat = {
       wood: std(0xa86b3d, 0.85),
       woodDark: std(0x6e4228, 0.9),
       plank: std(0xb98552, 0.8),
       stone: std(0x9b8f86, 0.9),
-      roof: std(0xb4473a, 0.7),
       iron: std(0x3b3532, 0.6, { metalness: 0.4 }),
       cream: std(0xf1e4cc, 0.7),
+      asphalt: std(0x55504c, 0.85),
+      walk: std(0xc9bfb2, 0.9),
+      line: std(0xf2efe6, 0.7),
     }
     this.lanternGlass = new THREE.MeshStandardMaterial({ color: 0xffe2a8, emissive: 0xffb25a, emissiveIntensity: 1.5, roughness: 0.4 })
     this.windowMat = new THREE.MeshStandardMaterial({ color: 0x3a3f4a, emissive: 0xffb866, emissiveIntensity: 0.1, roughness: 0.2 })
 
-    this.buildBridge()
-    this.buildStartArch()
-    this.buildCabin(-24, 16, 0.6)
+    this.buildBridges()
     this.buildPier()
     this.buildRamps()
+    for (const l of town.lampSpots) this.addLanternAt(l.x, l.z, 1)
+    const loop = town.joggingLoop
+    if (loop) {
+      for (let k = 0; k < 10; k++) {
+        const a = (k / 10) * Math.PI * 2 + 0.15
+        const x = loop.x + Math.cos(a) * (loop.r + 2.2), z = loop.z + Math.sin(a) * (loop.r + 2.2)
+        if (layout.channelDistance(x, z) > 2 && !layout.isWater(x, z)) this.addLanternAt(x, z, 0.9)
+      }
+    }
     this.buildLanterns()
-    this.buildFences()
-    this.buildRocks()
     this.buildBenches()
+    this.buildRocks()
     this.buildDynamics()
     this.buildSeasonal()
     this.buildGlowDecals()
@@ -93,189 +101,65 @@ export class Props {
   }
 
   // ------------------------------------------------------------- Bridge
-  buildBridge() {
+  // ------------------------------------------------------------- Stone bridges
+  buildBridges() {
     const L = this.layout
-    const b = L.bridge
-    const hw = WORLD.roadHalfWidth + 0.3
-    const N = L.roadCount
-    const plankGeo = new THREE.BoxGeometry(hw * 2, 0.12, 0.44)
-    const count = b.halfSamples * 2 + 1
-    const planks = shadowed(new THREE.InstancedMesh(plankGeo, this.mat.plank, count))
-    const m = new THREE.Matrix4()
-    const q = new THREE.Quaternion()
-    const s = new THREE.Vector3(1, 1, 1)
-    const p = new THREE.Vector3()
-    const rnd = this.rnd
-    const color = new THREE.Color()
-    let k = 0
-    const railPosts = []
-    for (let d = -b.halfSamples; d <= b.halfSamples; d++) {
-      const i = (b.index + d + N) % N
-      const i2 = (i + 1) % N
-      const heading = Math.atan2(L.roadTX[i], L.roadTZ[i])
-      const pitch = -Math.atan2(L.roadH[i2] - L.roadH[i], L.roadStep)
-      q.setFromEuler(new THREE.Euler(pitch, heading, (rnd.random() - 0.5) * 0.02, 'YXZ'))
-      m.compose(p.set(L.roadX[i], L.roadH[i] - 0.02, L.roadZ[i]), q, s.set(1, 1, 1))
-      planks.setMatrixAt(k, m)
-      planks.setColorAt(k, color.setHSL(0.07, 0.45, 0.42 + rnd.random() * 0.12))
-      k++
-      if (d % 4 === 0) railPosts.push(i)
-    }
-    this.scene.add(planks)
-
-    // Stringers, posts, rails and railing colliders
-    const postGeo = new THREE.BoxGeometry(0.16, 1.1, 0.16)
-    const legGeo = new THREE.CylinderGeometry(0.16, 0.18, 1, 8)
-    const railGeo = new THREE.BoxGeometry(0.1, 0.1, 1)
-    const posts = shadowed(new THREE.InstancedMesh(postGeo, this.mat.woodDark, railPosts.length * 2))
-    const legs = shadowed(new THREE.InstancedMesh(legGeo, this.mat.woodDark, railPosts.length * 2))
-    const rails = shadowed(new THREE.InstancedMesh(railGeo, this.mat.wood, (railPosts.length - 1) * 4))
-    let pi = 0, li = 0, ri = 0
-    const prevTop = [null, null]
-    for (let n = 0; n < railPosts.length; n++) {
-      const i = railPosts[n]
-      const nx = -L.roadTZ[i], nz = L.roadTX[i]
-      for (let sIdx = 0; sIdx < 2; sIdx++) {
-        const side = sIdx === 0 ? 1 : -1
-        const x = L.roadX[i] + nx * side * (hw - 0.05), z = L.roadZ[i] + nz * side * (hw - 0.05)
-        const y = L.roadH[i]
-        m.compose(p.set(x, y + 0.5, z), q.identity(), s.set(1, 1, 1))
-        posts.setMatrixAt(pi++, m)
-        const ground = L.getHeight(x, z)
-        const legH = Math.max(0.2, y - ground)
-        m.compose(p.set(x, ground + legH / 2 - 0.1, z), q.identity(), s.set(1, legH + 0.2, 1))
-        legs.setMatrixAt(li++, m)
-        const top = new THREE.Vector3(x, y + 0.95, z)
-        if (prevTop[sIdx]) {
-          for (const dy of [0, -0.45]) {
-            const a = prevTop[sIdx].clone().setY(prevTop[sIdx].y + dy), c = top.clone().setY(top.y + dy)
-            const mid = a.clone().add(c).multiplyScalar(0.5)
-            const len = a.distanceTo(c)
-            q.setFromUnitVectors(new THREE.Vector3(0, 0, 1), c.clone().sub(a).normalize())
-            m.compose(mid, q, s.set(1, 1, len))
-            rails.setMatrixAt(ri++, m)
-          }
-          // Railing collider along this span
-          const mid = prevTop[sIdx].clone().add(top).multiplyScalar(0.5)
-          const len = prevTop[sIdx].distanceTo(top)
-          q.setFromUnitVectors(new THREE.Vector3(0, 0, 1), top.clone().sub(prevTop[sIdx]).normalize())
-          this.fixedBox(mid.x, mid.y - 0.35, mid.z, 0.12, 0.65, len / 2 + 0.05, q, { kind: 'prop', material: 'wood' })
+    const deckHalf = WORLD.roadHalfWidth + WORLD.sidewalk
+    const slabs = [], walks = [], parapets = [], dashes = []
+    for (const b of L.bridges) {
+      const hs = Math.round(b.half / 0.5)
+      for (let d = -hs; d < hs; d += 4) {
+        const i = b.center + d, i2 = Math.min(b.center + d + 4, b.center + hs)
+        if (i < b.start || i2 > b.end) continue
+        const ax = L.roadX[i], az = L.roadZ[i], ay = L.roadH[i]
+        const bx = L.roadX[i2], bz = L.roadZ[i2], by = L.roadH[i2]
+        const mid = new THREE.Vector3((ax + bx) / 2, (ay + by) / 2, (az + bz) / 2)
+        const len = Math.hypot(bx - ax, bz - az)
+        const heading = Math.atan2(bx - ax, bz - az)
+        const pitch = -Math.atan2(by - ay, len)
+        const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(pitch, heading, 0, 'YXZ'))
+        const nx = Math.cos(heading), nz = -Math.sin(heading)
+        slabs.push(new THREE.Matrix4().compose(mid.clone().setY(mid.y - 0.26), q, new THREE.Vector3(WORLD.roadHalfWidth * 2, 0.5, len + 0.05)))
+        for (const side of [-1, 1]) {
+          const off = WORLD.roadHalfWidth + WORLD.sidewalk / 2
+          walks.push(new THREE.Matrix4().compose(new THREE.Vector3(mid.x + nx * side * off, mid.y - 0.14, mid.z + nz * side * off), q, new THREE.Vector3(WORLD.sidewalk, 0.5, len + 0.05)))
+          const po = deckHalf + 0.2
+          const pp = new THREE.Vector3(mid.x + nx * side * po, mid.y + 0.45, mid.z + nz * side * po)
+          parapets.push(new THREE.Matrix4().compose(pp, q, new THREE.Vector3(0.45, 1.1, len + 0.05)))
+          this.fixedBox(pp.x, pp.y, pp.z, 0.25, 0.6, len / 2 + 0.05, q, { kind: 'prop', material: 'stone' })
         }
-        prevTop[sIdx] = top
+        if (Math.abs(d) % 8 === 0) dashes.push(new THREE.Matrix4().compose(mid.clone().setY(mid.y + 0.005), q, new THREE.Vector3(0.15, 0.02, 2)))
+      }
+      // stone piers under the deck
+      for (const side of [-1, 1]) {
+        const off = side * (b.half - 2)
+        const x = b.x + b.tx * off, z = b.z + b.tz * off
+        const g = L.getHeight(x, z)
+        const h = Math.max(0.5, L.roadH[b.center] - g)
+        const pier = shadowed(new THREE.Mesh(new THREE.BoxGeometry(deckHalf * 2, h, 1.6), this.mat.stone))
+        pier.position.set(x, g + h / 2 - 0.4, z)
+        pier.rotation.y = Math.atan2(b.tx, b.tz)
+        this.scene.add(pier)
       }
     }
-    rails.count = ri
-    this.scene.add(posts, legs, rails)
-    for (const d of [-b.halfSamples - 2, b.halfSamples + 2]) {
-      const f = L.roadFrame(b.index + d)
-      for (const side of [-1, 1]) this.addLanternAt(f.x - f.tz * side * (hw + 0.9), f.z + f.tx * side * (hw + 0.9), 1.6)
+    const inst = (geo, mat, list) => {
+      const m = shadowed(new THREE.InstancedMesh(geo, mat, list.length))
+      list.forEach((mm, i) => m.setMatrixAt(i, mm))
+      this.scene.add(m)
+      return m
     }
+    const box = new THREE.BoxGeometry(1, 1, 1)
+    inst(box, this.mat.asphalt, slabs)
+    inst(box, this.mat.walk, walks)
+    inst(box, this.mat.stone, parapets)
+    inst(box, this.mat.line, dashes)
   }
 
-  // ------------------------------------------------------------- Start arch
-  buildStartArch() {
-    const f = this.layout.roadFrame(0)
-    const nx = -f.tz, nz = f.tx
-    const hw = WORLD.roadHalfWidth + 1.0
-    const g = new THREE.Group()
-    const postGeo = new THREE.CylinderGeometry(0.22, 0.28, 5.2, 8)
-    for (const side of [-1, 1]) {
-      const x = f.x + nx * side * hw, z = f.z + nz * side * hw
-      const y = this.layout.getHeight(x, z)
-      const post = shadowed(new THREE.Mesh(postGeo, this.mat.woodDark))
-      post.position.set(x, y + 2.6, z)
-      g.add(post)
-      const body = this.physics.world.createRigidBody(this.R.RigidBodyDesc.fixed().setTranslation(x, y + 2.6, z))
-      this.physics.tag(this.physics.world.createCollider(this.R.ColliderDesc.cylinder(2.6, 0.28), body), { kind: 'prop', material: 'wood' })
-      this.addLanternAt(x + f.tx * 0.6, z + f.tz * 0.6, 1.2, y + 3.2)
-      this.layout.occupy(x, z, 1)
-    }
-    // banner with checker pattern
-    const cv = document.createElement('canvas')
-    cv.width = 512
-    cv.height = 96
-    const ctx = cv.getContext('2d')
-    ctx.fillStyle = '#f4e7cf'
-    ctx.fillRect(0, 0, 512, 96)
-    for (let i = 0; i < 32; i++) for (let j = 0; j < 2; j++) {
-      if ((i + j) % 2 === 0) { ctx.fillStyle = '#2a2626'; ctx.fillRect(i * 16, j * 16, 16, 16) }
-    }
-    ctx.fillStyle = '#2a2626'
-    ctx.font = 'bold 44px Nunito, sans-serif'
-    ctx.textAlign = 'center'
-    ctx.fillText('SEASONS VALLEY', 256, 80)
-    const tex = new THREE.CanvasTexture(cv)
-    tex.colorSpace = THREE.SRGBColorSpace
-    tex.anisotropy = 4
-    const banner = shadowed(new THREE.Mesh(new THREE.BoxGeometry(hw * 2 + 0.6, 1.0, 0.12), [this.mat.woodDark, this.mat.woodDark, this.mat.woodDark, this.mat.woodDark, new THREE.MeshStandardMaterial({ map: tex, roughness: 0.7 }), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.7 })]))
-    const y = f.y + 4.7
-    banner.position.set(f.x, y, f.z)
-    banner.rotation.y = f.heading
-    g.add(banner)
-    this.scene.add(g)
-  }
-
-  // ------------------------------------------------------------- Cabin
-  buildCabin(x, z, rot) {
-    const y = this.layout.getHeight(x, z)
-    const g = new THREE.Group()
-    g.position.set(x, y, z)
-    g.rotation.y = rot
-    const walls = shadowed(new THREE.Mesh(new THREE.BoxGeometry(5.2, 2.8, 4.2), this.mat.wood))
-    walls.position.y = 1.4
-    g.add(walls)
-    // log lines
-    for (let i = 0; i < 6; i++) {
-      const log = shadowed(new THREE.Mesh(new THREE.BoxGeometry(5.3, 0.08, 4.3), this.mat.woodDark), false)
-      log.position.y = 0.3 + i * 0.45
-      g.add(log)
-    }
-    const roofGeo = new THREE.BoxGeometry(6.0, 0.22, 3.0)
-    for (const side of [-1, 1]) {
-      const r = shadowed(new THREE.Mesh(roofGeo, this.mat.roof))
-      r.position.set(0, 3.45, side * 1.15)
-      r.rotation.x = side * 0.62
-      g.add(r)
-    }
-    const gable = new THREE.Shape([new THREE.Vector2(-2.1, 0), new THREE.Vector2(2.1, 0), new THREE.Vector2(0, 1.55)])
-    for (const side of [-1, 1]) {
-      const gm = shadowed(new THREE.Mesh(new THREE.ShapeGeometry(gable), this.mat.wood))
-      gm.position.set(side * 2.6, 2.8, 0)
-      gm.rotation.y = Math.PI / 2
-      g.add(gm)
-    }
-    const door = new THREE.Mesh(new THREE.BoxGeometry(1.0, 1.9, 0.08), this.mat.woodDark)
-    door.position.set(0.8, 0.95, 2.12)
-    g.add(door)
-    for (const wx of [-1.4]) {
-      const w = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.8, 0.06), this.windowMat)
-      w.position.set(wx, 1.6, 2.12)
-      g.add(w)
-      const frame = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.95, 0.04), this.mat.cream)
-      frame.position.set(wx, 1.6, 2.1)
-      g.add(frame)
-    }
-    const side = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.8, 1.0), this.windowMat)
-    side.position.set(2.62, 1.6, 0)
-    g.add(side)
-    const chimney = shadowed(new THREE.Mesh(new THREE.BoxGeometry(0.6, 1.6, 0.6), this.mat.stone))
-    chimney.position.set(-1.6, 3.9, -0.8)
-    g.add(chimney)
-    this.chimneyTop = new THREE.Vector3(-1.6, 4.8, -0.8).applyEuler(new THREE.Euler(0, rot, 0)).add(new THREE.Vector3(x, y, z))
-    this.scene.add(g)
-    const q = new THREE.Quaternion().setFromAxisAngle(UP, rot)
-    this.fixedBox(x, y + 1.6, z, 2.7, 1.6, 2.2, q, { kind: 'prop', material: 'wood' })
-    this.layout.occupy(x, z, 5)
-    this.layout.clearGrass(x, z, 4.5)
-    const porch = new THREE.Vector3(1.8, 0, 2.4).applyEuler(new THREE.Euler(0, rot, 0))
-    this.addLanternAt(x + porch.x, z + porch.z, 1.1)
-  }
-
-  // ------------------------------------------------------------- Pier
+  // ------------------------------------------------------------- Pier on the park lake
   buildPier() {
     const L = this.layout
-    const x0 = 2, z0 = 15, len = 11
-    const ang = Math.PI // pointing south into the lake
+    const lake = L.lake
+    const x0 = lake.x - 6, z0 = lake.z + lake.r + 2.5, len = 11
     const g = new THREE.Group()
     const deckY = WORLD.waterLevel + 0.75
     const planks = shadowed(new THREE.InstancedMesh(new THREE.BoxGeometry(2.4, 0.1, 0.42), this.mat.plank, Math.round(len / 0.46)))
@@ -295,36 +179,30 @@ export class Props {
       }
     }
     g.position.set(x0, 0, z0)
-    g.rotation.y = ang - Math.PI
     this.scene.add(g)
-    const mid = new THREE.Vector3(0, deckY - 0.1, -len / 2).applyEuler(g.rotation).add(g.position)
-    this.fixedBox(mid.x, mid.y, mid.z, 1.2, 0.08, len / 2, new THREE.Quaternion().setFromEuler(g.rotation), { kind: 'prop', material: 'wood' })
-    this.addLanternAt(x0 + 1.4, z0 + 0.6, 1.1, L.getHeight(x0 + 1.4, z0 + 0.6))
+    const mid = new THREE.Vector3(x0, deckY - 0.1, z0 - len / 2)
+    this.fixedBox(mid.x, mid.y, mid.z, 1.2, 0.08, len / 2, new THREE.Quaternion(), { kind: 'prop', material: 'wood' })
+    this.pier = { x: x0, z: z0 - len + 1, y: deckY }
   }
 
-  // ------------------------------------------------------------- Ramps
+  // ------------------------------------------------------------- Ramps (stunt park)
   buildRamps() {
-    const defs = [
-      { x: 22, z: 20, heading: Math.PI / 2, len: 7, h: 1.7 },
-      { x: -84, z: -60, heading: Math.PI * 0.25, len: 8, h: 2.1 },
-      { x: -20, z: -14, heading: -Math.PI * 0.75, len: 6, h: 1.4 },
-    ]
+    const sp = this.town.stuntPark
+    const defs = sp ? [
+      { x: sp.x0 + 6, z: sp.cz - 8, heading: Math.PI / 2, len: 7, h: 1.7 },
+      { x: sp.x1 - 7, z: sp.cz + 9, heading: -Math.PI / 2, len: 8, h: 2.1 },
+      { x: sp.cx + 2, z: sp.z0 + 6, heading: 0, len: 6, h: 1.4 },
+    ] : []
     this.ramps = []
     for (const d of defs) {
       const w = 4.2
       const y = this.layout.getHeight(d.x, d.z)
-      // wedge: rises along +z
       const verts = [
         [-w / 2, 0, -d.len / 2], [w / 2, 0, -d.len / 2], [-w / 2, 0, d.len / 2], [w / 2, 0, d.len / 2],
         [-w / 2, d.h, d.len / 2], [w / 2, d.h, d.len / 2],
       ]
       const geo = new THREE.BufferGeometry()
-      const tri = [
-        [0, 2, 4], [1, 5, 3], // sides
-        [0, 4, 5], [0, 5, 1], // slope
-        [2, 3, 5], [2, 5, 4], // back
-        [0, 1, 3], [0, 3, 2], // bottom
-      ]
+      const tri = [[0, 2, 4], [1, 5, 3], [0, 4, 5], [0, 5, 1], [2, 3, 5], [2, 5, 4], [0, 1, 3], [0, 3, 2]]
       const pos = []
       for (const t of tri) for (const i of t) pos.push(...verts[i])
       geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
@@ -333,9 +211,7 @@ export class Props {
       ramp.position.set(d.x, y - 0.05, d.z)
       ramp.rotation.y = d.heading
       this.scene.add(ramp)
-      // stripes on the slope
       const slope = Math.atan2(d.h, d.len)
-      const slopeLen = Math.hypot(d.h, d.len)
       for (let i = 0; i < 5; i++) {
         const strip = new THREE.Mesh(new THREE.BoxGeometry(w + 0.02, 0.03, 0.16), i % 2 ? this.mat.cream : this.mat.woodDark)
         const t = (i + 0.5) / 5
@@ -343,20 +219,14 @@ export class Props {
         strip.rotation.x = -slope
         ramp.add(strip)
       }
-      void slopeLen
       const body = this.physics.world.createRigidBody(this.R.RigidBodyDesc.fixed().setTranslation(d.x, y - 0.05, d.z).setRotation(new THREE.Quaternion().setFromAxisAngle(UP, d.heading)))
       const hull = this.R.ColliderDesc.convexHull(new Float32Array(verts.flat()))
       this.physics.tag(this.physics.world.createCollider(hull.setFriction(0.9), body), { kind: 'prop', material: 'wood' })
       this.layout.occupy(d.x, d.z, d.len * 0.6)
-      this.layout.clearGrass(d.x, d.z, d.len * 0.55, 0.8)
-      // keep a landing zone clear of trees
-      const lx = d.x + Math.sin(d.heading) * (d.len + 10), lz = d.z + Math.cos(d.heading) * (d.len + 10)
-      this.layout.occupy(lx, lz, 9)
       this.ramps.push({ ...d, y, top: new THREE.Vector3(d.x + Math.sin(d.heading) * d.len * 0.5, y + d.h, d.z + Math.cos(d.heading) * d.len * 0.5) })
     }
   }
 
-  // ------------------------------------------------------------- Lanterns
   addLanternAt(x, z, scale = 1, yOverride) {
     const y = yOverride ?? this.layout.getHeight(x, z)
     this.pendingLanterns = this.pendingLanterns || []
@@ -365,17 +235,6 @@ export class Props {
   }
 
   buildLanterns() {
-    const L = this.layout
-    const spacing = Math.round(26 / L.roadStep)
-    const hw = WORLD.roadHalfWidth
-    let side = 1
-    for (let i = 20; i < L.roadCount - 10; i += spacing) {
-      if (L.isOnBridge(i) || Math.abs(L.ringDelta(i, L.bridge.index)) < L.bridge.halfSamples + 10) continue
-      const f = L.roadFrame(i)
-      const x = f.x - f.tz * side * (hw + 1.4), z = f.z + f.tx * side * (hw + 1.4)
-      this.addLanternAt(x, z, 1)
-      side = -side
-    }
     const list = this.pendingLanterns
     const n = list.length
     const postGeo = new THREE.CylinderGeometry(0.07, 0.09, 1.0, 6).translate(0, 0.5, 0)
@@ -433,54 +292,28 @@ export class Props {
   }
 
   // ------------------------------------------------------------- Fences
-  buildFences() {
-    const L = this.layout
-    const hw = WORLD.roadHalfWidth
-    // Fence the outside of a few sweeping corners
-    const runs = [[60, 150], [330, 420], [560, 640]]
-    const segs = []
-    for (const [a, b] of runs) {
-      for (let i = a; i < b; i += 5) {
-        const fa = L.roadFrame(i), fb = L.roadFrame(i + 5)
-        // outside of corner: pick side with larger curvature
-        const turn = fa.tx * fb.tz - fa.tz * fb.tx
-        const side = turn > 0 ? -1 : 1
-        const off = hw + 2.6
-        const pa = new THREE.Vector3(fa.x - fa.tz * side * off, 0, fa.z + fa.tx * side * off)
-        const pb = new THREE.Vector3(fb.x - fb.tz * side * off, 0, fb.z + fb.tx * side * off)
-        if (L.isWater(pa.x, pa.z) || !L.isFree(pa.x, pa.z, 0.2, { roadMargin: 0.5 })) continue
-        pa.y = L.getHeight(pa.x, pa.z)
-        pb.y = L.getHeight(pb.x, pb.z)
-        segs.push([pa, pb])
-      }
-    }
-    const postGeo = new THREE.BoxGeometry(0.14, 1.0, 0.14)
-    const railGeo = new THREE.BoxGeometry(0.06, 0.09, 1)
-    const posts = shadowed(new THREE.InstancedMesh(postGeo, this.mat.woodDark, segs.length))
-    const rails = shadowed(new THREE.InstancedMesh(railGeo, this.mat.wood, segs.length * 2))
+  // ------------------------------------------------------------- Benches (from the town plan)
+  buildBenches() {
+    const list = this.town.benches.filter((b) => !this.layout.isWater(b.x, b.z))
+    const seat = shadowed(new THREE.InstancedMesh(new THREE.BoxGeometry(1.8, 0.08, 0.45), this.mat.wood, list.length))
+    const back = shadowed(new THREE.InstancedMesh(new THREE.BoxGeometry(1.8, 0.4, 0.06), this.mat.wood, list.length))
+    const legs = shadowed(new THREE.InstancedMesh(new THREE.BoxGeometry(1.6, 0.45, 0.4), this.mat.iron, list.length))
     const m = new THREE.Matrix4()
     const q = new THREE.Quaternion()
-    const s = new THREE.Vector3()
-    segs.forEach(([a, b], i) => {
-      m.compose(a.clone().setY(a.y + 0.45), q.identity(), s.set(1, 1, 1))
-      posts.setMatrixAt(i, m)
-      const dir = b.clone().sub(a)
-      const len = dir.length()
-      q.setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir.normalize())
-      for (let r = 0; r < 2; r++) {
-        const mid = a.clone().add(b).multiplyScalar(0.5)
-        mid.y += 0.4 + r * 0.35
-        m.compose(mid, q, s.set(1, 1, len))
-        rails.setMatrixAt(i * 2 + r, m)
-      }
-      this.layout.occupy(a.x, a.z, 0.5)
-      const mid = a.clone().add(b).multiplyScalar(0.5)
-      this.fixedBox(mid.x, mid.y + 0.5, mid.z, 0.08, 0.5, len / 2, q, { kind: 'prop', material: 'wood' })
+    list.forEach((b, i) => {
+      const y = this.layout.getDriveHeight(b.x, b.z)
+      q.setFromAxisAngle(UP, b.rot)
+      const at = (lx, ly, lz) => new THREE.Vector3(lx, ly, lz).applyQuaternion(q).add(new THREE.Vector3(b.x, y, b.z))
+      seat.setMatrixAt(i, m.compose(at(0, 0.45, 0), q, new THREE.Vector3(1, 1, 1)))
+      back.setMatrixAt(i, m.compose(at(0, 0.75, -0.2), q, new THREE.Vector3(1, 1, 1)))
+      legs.setMatrixAt(i, m.compose(at(0, 0.22, 0), q, new THREE.Vector3(1, 1, 0.9)))
+      b.y = y
+      this.layout.occupy(b.x, b.z, 1.1)
     })
-    this.scene.add(posts, rails)
+    this.benches = list
+    this.scene.add(seat, back, legs)
   }
 
-  // ------------------------------------------------------------- Rocks
   buildRocks() {
     const rnd = this.rnd
     const geo = new THREE.DodecahedronGeometry(1, 1)
@@ -511,9 +344,10 @@ export class Props {
     flat.setAttribute('color', new THREE.BufferAttribute(c, 3))
     const rocks = []
     let tries = 0
-    while (rocks.length < 70 && tries < 4000) {
+    while (rocks.length < 130 && tries < 8000) {
       tries++
-      const x = rnd.range(-108, 108), z = rnd.range(-108, 108)
+      const x = rnd.range(-335, 335), z = rnd.range(-335, 335)
+      if (Math.max(Math.abs(x), Math.abs(z)) < 182 && rnd.random() < 0.85) continue
       const sc = rnd.random() < 0.15 ? rnd.range(1.4, 2.6) : rnd.range(0.35, 1.1)
       if (!this.layout.isFree(x, z, sc, { roadMargin: 1.2, allowWater: true })) continue
       const y = this.layout.getHeight(x, z)
@@ -537,37 +371,13 @@ export class Props {
   }
 
   // ------------------------------------------------------------- Benches
-  buildBenches() {
-    const spots = [[-6, 18, 0.2], [18, 16, -0.3], [-30, 8, 1.2]]
-    for (const [x, z, r] of spots) {
-      if (!this.layout.isFree(x, z, 1.2)) continue
-      const y = this.layout.getHeight(x, z)
-      const g = new THREE.Group()
-      const seat = shadowed(new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.08, 0.45), this.mat.wood))
-      seat.position.y = 0.45
-      const back = shadowed(new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.4, 0.06), this.mat.wood))
-      back.position.set(0, 0.75, -0.2)
-      g.add(seat, back)
-      for (const sx of [-0.75, 0.75]) {
-        const leg = shadowed(new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.45, 0.4), this.mat.iron))
-        leg.position.set(sx, 0.22, 0)
-        g.add(leg)
-      }
-      g.position.set(x, y, z)
-      g.rotation.y = r
-      this.scene.add(g)
-      this.layout.occupy(x, z, 1.2)
-      this.fixedBox(x, y + 0.45, z, 0.9, 0.45, 0.25, new THREE.Quaternion().setFromAxisAngle(UP, r))
-    }
-  }
-
-  // ------------------------------------------------------------- Dynamic props
   buildDynamics() {
     const R = this.R
     const world = this.physics.world
     const crateSpots = []
-    // Crate pyramid in the yard
-    const cx = -34, cz = -30
+    const sp = this.town.stuntPark
+    // Crate pyramid in the stunt park
+    const cx = sp.cx + 6, cz = sp.cz + 1
     const yard = this.layout.getHeight(cx, cz)
     const size = 0.9
     for (let row = 0; row < 3; row++) {
@@ -577,8 +387,8 @@ export class Props {
         }
       }
     }
-    // Loose crates by the cabin and start
-    crateSpots.push([-19, this.layout.getHeight(-19, 19) + 0.5, 19], [-18.5, this.layout.getHeight(-18.5, 20.2) + 0.5, 20.2], [-18.7, this.layout.getHeight(-18.7, 19.6) + 1.4, 19.6])
+    // Loose crates by the market stalls and the garage
+    for (const s of (this.town.stalls || []).slice(0, 2)) crateSpots.push([s.x + 2.6, this.layout.getHeight(s.x + 2.6, s.z) + 0.5, s.z])
     this.layout.occupy(cx, cz, 4)
 
     const crateGeo = new RoundedBoxGeometry(size, size, size, 1, 0.04)
@@ -595,8 +405,9 @@ export class Props {
     })
     this.scene.add(crates)
 
-    // Barrels around the yard
-    const barrelSpots = [[-28, -32], [-27.2, -33.2], [-39, -27], [-38.5, -25.8], [-40, -26.6], [-31, -21]]
+    // Barrels around the brickyard
+    const yd = this.town.yard
+    const barrelSpots = [[yd.x1 - 14, yd.z0 + 4], [yd.x1 - 13.2, yd.z0 + 5.2], [yd.x1 - 22, yd.z0 + 4.5], [yd.x1 - 21.5, yd.z0 + 5.7], [sp.x0 + 4, sp.z1 - 4], [sp.x0 + 5, sp.z1 - 4.6]]
     const barrelGeo = new THREE.CylinderGeometry(0.38, 0.38, 1.0, 14)
     const barrelMat = wettable(new THREE.MeshStandardMaterial({ color: 0xc0573a, roughness: 0.5, metalness: 0.35 }))
     const barrels = shadowed(new THREE.InstancedMesh(barrelGeo, barrelMat, barrelSpots.length))
@@ -626,9 +437,9 @@ export class Props {
     })
     this.scene.add(barrels, bands)
 
-    // Cone slalom on the north meadow
+    // Cone slalom in the stunt park
     const cones = []
-    for (let i = 0; i < 9; i++) cones.push([-8 + i * 3.6, 27 + (i % 2) * 1.2])
+    for (let i = 0; i < 9; i++) cones.push([sp.x0 + 6 + i * 2.8, sp.z1 - 5 + (i % 2) * 1.2])
     const coneGeo = new THREE.ConeGeometry(0.24, 0.62, 12).translate(0, 0.31 - 0.05, 0)
     const baseGeo = new THREE.BoxGeometry(0.46, 0.05, 0.46)
     const coneMat = wettable(new THREE.MeshStandardMaterial({ color: 0xff7a2f, roughness: 0.5 }))
@@ -703,7 +514,8 @@ export class Props {
       pp.setXYZ(i, v.x * ridge, v.y * 0.75, v.z * ridge)
     }
     pumpkinGeo.computeVertexNormals()
-    const spots = [[-20, 20.5], [-21, 21.2], [-19.4, 21.6], [-5, 36], [6, 35.5], [-26, 11], [12, 24]]
+    const spots = []
+    for (const h of this.town.houses) if (this.rnd.random() < 0.35) spots.push([h.door.x + (this.rnd.random() - 0.5) * 1.6, h.door.z + (this.rnd.random() - 0.5) * 0.6])
     const pumpkins = shadowed(new THREE.InstancedMesh(pumpkinGeo, this.seasonalMaterial(0xf07a1e, 'uAutumn'), spots.length))
     const stemGeo = new THREE.CylinderGeometry(0.04, 0.06, 0.18, 6)
     const stems = new THREE.InstancedMesh(stemGeo, this.seasonalMaterial(0x4f6b2a, 'uAutumn'), spots.length)
@@ -721,9 +533,9 @@ export class Props {
     // Flowers (spring) in meadow clusters
     const flowers = []
     let tries = 0
-    while (flowers.length < 900 && tries < 20000) {
+    while (flowers.length < 1100 && tries < 20000) {
       tries++
-      const cxp = rnd.range(-95, 95), czp = rnd.range(-95, 95)
+      const cxp = rnd.range(-300, 300), czp = rnd.range(-185, 300)
       if (this.layout.n2(cxp * 0.05, czp * 0.05) < 0.25) continue
       for (let k = 0; k < 6; k++) {
         const x = cxp + rnd.range(-2.5, 2.5), z = czp + rnd.range(-2.5, 2.5)

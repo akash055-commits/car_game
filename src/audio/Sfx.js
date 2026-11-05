@@ -185,4 +185,122 @@ export class Sfx {
     oscs.forEach((o) => o.stop(t + 0.2))
     this.horn = null
   }
+
+  // ---------------------------------------------------------------- town life
+  // distance attenuation for world sounds heard from the camera
+  near(d, ref = 12) {
+    return 1 / (1 + (d / ref) * (d / ref))
+  }
+
+  footstep(surface = 'road', run = false) {
+    const t = this.ctx.currentTime + 0.002
+    const g = run ? 0.09 : 0.06
+    if (surface === 'grass' || surface === 'dirt') {
+      this.noiseBurst({ t, dur: 0.09, filter: 'bandpass', freq: 1400 + Math.random() * 500, q: 0.7, gain: g * 0.8, buffer: 'pink' })
+    } else if (surface === 'wood') {
+      this.noiseBurst({ t, dur: 0.07, filter: 'lowpass', freq: 500, q: 1.5, gain: g * 1.4, buffer: 'brown' })
+      this.tone({ t, freq: 180 + Math.random() * 40, dur: 0.06, type: 'triangle', gain: g * 0.25 })
+    } else {
+      this.noiseBurst({ t, dur: 0.05, filter: 'bandpass', freq: 2600 + Math.random() * 900, q: 1.2, gain: g * 0.55 })
+      this.noiseBurst({ t, dur: 0.07, filter: 'lowpass', freq: 260, q: 0.8, gain: g * 0.9, buffer: 'brown' })
+    }
+  }
+
+  // Little vocal blips: no words, just pitch contours (Animal-Crossing style but softer)
+  voice(kind, dist) {
+    const v = this.near(dist, 9)
+    if (v < 0.04) return
+    const now = this.ctx.currentTime
+    if (now - (this.lastVoice || 0) < 0.12) return
+    this.lastVoice = now
+    const t = now + 0.01
+    const base = 210 + Math.random() * 180
+    const shapes = {
+      hey: [[1, 1.25, 0.12], [1.25, 1.1, 0.14]],
+      hello: [[1, 1.2, 0.1], [1.3, 1.15, 0.16]],
+      yelp: [[1.4, 2.0, 0.16]],
+      oof: [[1.1, 0.7, 0.2]],
+      angry: [[0.85, 0.8, 0.1], [0.9, 0.75, 0.12], [0.95, 0.7, 0.16]],
+      laugh: [[1.3, 1.25, 0.07], [1.3, 1.2, 0.07], [1.25, 1.1, 0.09]],
+      wow: [[0.9, 1.5, 0.22]],
+    }
+    let at = t
+    for (const [a, b, d] of shapes[kind] || shapes.hey) {
+      const o = this.ctx.createOscillator()
+      o.type = 'triangle'
+      o.frequency.setValueAtTime(base * a, at)
+      o.frequency.exponentialRampToValueAtTime(base * b, at + d)
+      const f = this.ctx.createBiquadFilter()
+      f.type = 'bandpass'
+      f.frequency.value = base * 3.2
+      f.Q.value = 1.4
+      const g = this.ctx.createGain()
+      g.gain.setValueAtTime(0.0001, at)
+      g.gain.exponentialRampToValueAtTime(0.11 * v, at + 0.015)
+      g.gain.exponentialRampToValueAtTime(0.0001, at + d)
+      o.connect(f).connect(g).connect(this.out)
+      o.start(at)
+      o.stop(at + d + 0.05)
+      at += d * 0.9
+    }
+  }
+
+  hammer(dist) {
+    const v = this.near(dist, 14)
+    if (v < 0.03) return
+    const t = this.ctx.currentTime + 0.005
+    this.tone({ t, freq: 1700 + Math.random() * 500, dur: 0.07, type: 'triangle', gain: 0.05 * v })
+    this.noiseBurst({ t, dur: 0.06, freq: 2400, q: 2, gain: 0.07 * v })
+    this.noiseBurst({ t, dur: 0.1, filter: 'lowpass', freq: 380, gain: 0.08 * v, buffer: 'brown' })
+  }
+
+  honk(dist) {
+    const v = this.near(dist, 22)
+    if (v < 0.03) return
+    const t = this.ctx.currentTime + 0.01
+    const dur = 0.28 + Math.random() * 0.2
+    for (const f of [350, 440]) this.tone({ t, freq: f + Math.random() * 20, dur, type: 'square', gain: 0.022 * v, attack: 0.02 })
+    this.tone({ t: t + dur + 0.1, freq: 350, dur: dur * 0.6, type: 'square', gain: 0.018 * v, attack: 0.02 })
+  }
+
+  coin(n = 1) {
+    const t = this.ctx.currentTime + 0.01
+    const k = Math.min(4, Math.max(1, Math.round(n / 40)))
+    for (let i = 0; i < k; i++) {
+      this.bell(t + i * 0.07, 1567.98, 0.07, 0.5)
+      this.bell(t + i * 0.07 + 0.05, 2093, 0.06, 0.7)
+    }
+  }
+
+  beep(go = false) {
+    const t = this.ctx.currentTime + 0.01
+    this.tone({ t, freq: go ? 1046.5 : 523.25, dur: go ? 0.6 : 0.22, type: 'triangle', gain: 0.12 })
+    this.tone({ t, freq: go ? 2093 : 1046.5, dur: go ? 0.4 : 0.15, type: 'sine', gain: 0.04 })
+  }
+
+  door(open = true) {
+    const t = this.ctx.currentTime + 0.01
+    this.noiseBurst({ t, dur: 0.12, filter: 'lowpass', freq: open ? 700 : 450, gain: 0.12, buffer: 'brown' })
+    this.tone({ t: t + 0.01, freq: open ? 140 : 110, dur: 0.12, type: 'sine', gain: 0.08 })
+    this.noiseBurst({ t: t + 0.015, dur: 0.05, freq: 3000, q: 1.5, gain: 0.03 })
+  }
+
+  starter() {
+    // helicopter: starter click + igniter ticks
+    const t = this.ctx.currentTime + 0.01
+    this.tone({ t, freq: 900, dur: 0.05, type: 'square', gain: 0.03 })
+    for (let i = 0; i < 8; i++) this.noiseBurst({ t: t + 0.25 + i * 0.13, dur: 0.03, freq: 4200, q: 3, gain: 0.04 })
+  }
+
+  smash(dist) {
+    const v = this.near(dist, 16)
+    const t = this.ctx.currentTime + 0.01
+    this.noiseBurst({ t, dur: 0.45, filter: 'lowpass', freq: 500, gain: 0.3 * v, buffer: 'brown' })
+    for (let i = 0; i < 5; i++) this.noiseBurst({ t: t + 0.05 + Math.random() * 0.4, dur: 0.12, freq: 900 + Math.random() * 800, q: 1.2, gain: 0.08 * v, buffer: 'pink' })
+  }
+
+  fanfare() {
+    const t = this.ctx.currentTime + 0.01
+    ;[587.33, 739.99, 880, 1174.66].forEach((f, i) => this.bell(t + i * 0.09, f, 0.1, 1.3))
+  }
 }
