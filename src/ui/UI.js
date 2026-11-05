@@ -236,6 +236,7 @@ export class UI {
     const { C, ARC } = this.arc
     const frac = Math.min(kmh / 120, 1)
     this.dom.value.setAttribute('stroke-dasharray', `${C * ARC * frac} ${C}`)
+    this.dom.value.style.opacity = frac > 0.01 ? 1 : 0
     const rpmFrac = Math.min(vp.rpm / 7200, 1)
     this.dom.rpm.setAttribute('stroke-dasharray', `${(C - 2 * Math.PI * 11) * ARC * rpmFrac} ${C}`)
     this.dom.rpm.classList.toggle('red', vp.rpm > 6500)
