@@ -250,6 +250,7 @@ export class UI {
     this.dom.boost.classList.toggle('on', vp.boosting)
 
     const c = game.circuit
+    if (!c) return
     if (c.running) {
       this.dom.lapN.textContent = `Lap ${c.lap}`
       this.dom.time.textContent = formatTime(c.current)

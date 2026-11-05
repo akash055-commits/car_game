@@ -9,7 +9,7 @@ export const SEASONS = {
     colors: {
       uGrassRoot: '#6e2a0c', uGrassTip: '#ffbe45', uGround: '#b5551f', uDirt: '#d27a3c', uSand: '#e7b07a', uRock: '#9a7a66',
       uLeafA: '#f8c845', uLeafB: '#f0792a', uLeafC: '#cc3526', uTrunk: '#5a3424',
-      uRoad: '#e0a072', uRoadEdge: '#8a4a2a', uWaterShallow: '#4cc4b2', uWaterDeep: '#17566a', uFoam: '#fff1dc',
+      uRoad: '#d9b08a', uRoadEdge: '#8a5a3e', uAsphalt: '#5e5550', uWaterShallow: '#4cc4b2', uWaterDeep: '#17566a', uFoam: '#fff1dc',
       uFlowerA: '#ff8fb8', uFlowerB: '#fff0a0',
     },
     values: { uWet: 0, uRain: 0, uSpring: 0, uAutumn: 1, uWindStrength: 0.75 },
@@ -23,7 +23,7 @@ export const SEASONS = {
     colors: {
       uGrassRoot: '#2c6a2b', uGrassTip: '#b0dc62', uGround: '#6f9b45', uDirt: '#b39166', uSand: '#e8d6a6', uRock: '#a8a197',
       uLeafA: '#86c955', uLeafB: '#ffb2cd', uLeafC: '#fff1f4', uTrunk: '#5d4632',
-      uRoad: '#e9dac2', uRoadEdge: '#9b8466', uWaterShallow: '#6ad8c8', uWaterDeep: '#1c6b86', uFoam: '#ffffff',
+      uRoad: '#e3d6c2', uRoadEdge: '#9b8466', uAsphalt: '#626366', uWaterShallow: '#6ad8c8', uWaterDeep: '#1c6b86', uFoam: '#ffffff',
       uFlowerA: '#ff8fb8', uFlowerB: '#fff0a0',
     },
     values: { uWet: 0, uRain: 0, uSpring: 1, uAutumn: 0, uWindStrength: 0.45 },
@@ -37,7 +37,7 @@ export const SEASONS = {
     colors: {
       uGrassRoot: '#173d24', uGrassTip: '#5c9e52', uGround: '#4a6838', uDirt: '#6a5840', uSand: '#8c7f67', uRock: '#6c7270',
       uLeafA: '#2d6c3b', uLeafB: '#4c8a44', uLeafC: '#1d5848', uTrunk: '#36291f',
-      uRoad: '#a29c93', uRoadEdge: '#5c564e', uWaterShallow: '#5a9894', uWaterDeep: '#1b3d48', uFoam: '#e6f0ef',
+      uRoad: '#9c968e', uRoadEdge: '#5c564e', uAsphalt: '#3c3e41', uWaterShallow: '#5a9894', uWaterDeep: '#1b3d48', uFoam: '#e6f0ef',
       uFlowerA: '#ff8fb8', uFlowerB: '#fff0a0',
     },
     values: { uWet: 1, uRain: 1, uSpring: 0, uAutumn: 0, uWindStrength: 1.15 },

@@ -1,17 +1,24 @@
-// Camera: a high three-quarter "diorama" view (default) or a low chase cam.
-// Spring-smoothed follow with speed look-ahead, drag-to-orbit, wheel-to-zoom,
-// boost FOV kick and impact shake.
+// Camera modes:
+//  • diorama — high three-quarter view (the signature look), drag to orbit, wheel to zoom
+//  • chase   — low eye-level camera behind a car / bike / helicopter
+//  • third   — over-the-shoulder eye-level camera when walking (mouse look)
+// Cameras that sit behind the player are pulled in when a wall is in the way.
 import * as THREE from 'three'
 import { clamp, damp, angleDelta } from '../core/math.js'
 
 const _v = new THREE.Vector3()
 const _fwd = new THREE.Vector3()
 
+const MODES = { foot: ['third', 'diorama'], car: ['diorama', 'chase'], bike: ['diorama', 'chase'], heli: ['chase', 'diorama'] }
+
 export class CameraRig {
-  constructor(camera, dom) {
+  constructor(camera, dom, physics) {
     this.camera = camera
-    this.mode = 'diorama'
-    this.azimuth = -2.35 // radians around Y (camera sits south-west of the car by default)
+    this.physics = physics
+    this.dom = dom
+    this.modeIndex = { foot: 0, car: 0, bike: 0, heli: 0 }
+    this.kind = 'car'
+    this.azimuth = -2.35
     this.targetAzimuth = this.azimuth
     this.elevation = 0.72
     this.distance = 26
@@ -22,33 +29,71 @@ export class CameraRig {
     this.fov = 32
     this.initialized = false
     this.chaseHeading = 0
+    // third-person orbit
+    this.yaw = 0
+    this.pitch = 0.18
+    this.thirdDist = 3.6
+    this.lastLook = -10
+    this.time = 0
 
     let dragging = false, lastX = 0, lastY = 0
     dom.addEventListener('pointerdown', (e) => {
-      if (e.pointerType === 'touch') return // touch drag is handled by the touch controls
+      if (e.pointerType === 'touch') return
       dragging = true
       lastX = e.clientX
       lastY = e.clientY
+      if (this.mode !== 'diorama' && document.pointerLockElement !== dom && dom.requestPointerLock) {
+        try { dom.requestPointerLock() } catch {}
+      }
     })
     window.addEventListener('pointerup', () => (dragging = false))
     window.addEventListener('pointermove', (e) => {
+      if (document.pointerLockElement === dom) {
+        this.look(e.movementX * 0.0035, e.movementY * 0.0028)
+        return
+      }
       if (!dragging) return
-      this.targetAzimuth -= (e.clientX - lastX) * 0.006
-      this.elevation = clamp(this.elevation + (e.clientY - lastY) * 0.003, 0.35, 1.2)
+      this.look((e.clientX - lastX) * 0.006, (e.clientY - lastY) * 0.004)
       lastX = e.clientX
       lastY = e.clientY
     })
     dom.addEventListener('wheel', (e) => {
-      this.targetDistance = clamp(this.targetDistance + e.deltaY * 0.02, 12, 46)
+      if (this.mode === 'diorama') this.targetDistance = clamp(this.targetDistance + e.deltaY * 0.02, 12, 60)
+      else this.thirdDist = clamp(this.thirdDist + e.deltaY * 0.004, 2.2, 9)
     }, { passive: true })
   }
 
+  get mode() {
+    return MODES[this.kind][this.modeIndex[this.kind]]
+  }
+
+  setKind(kind) {
+    if (kind !== this.kind) {
+      this.kind = kind
+      this.initialized = false
+    }
+  }
+
+  look(dx, dy) {
+    if (this.mode === 'diorama') {
+      this.targetAzimuth -= dx
+      this.elevation = clamp(this.elevation + dy * 0.75, 0.3, 1.25)
+    } else {
+      this.yaw -= dx
+      this.pitch = clamp(this.pitch + dy, -0.35, 1.1)
+      this.lastLook = this.time
+    }
+  }
+
   orbit(dx) {
-    this.targetAzimuth -= dx
+    this.look(dx, 0)
   }
 
   toggle() {
-    this.mode = this.mode === 'diorama' ? 'chase' : 'diorama'
+    const list = MODES[this.kind]
+    this.modeIndex[this.kind] = (this.modeIndex[this.kind] + 1) % list.length
+    this.initialized = false
+    if (this.mode === 'diorama' && document.pointerLockElement) document.exitPointerLock?.()
     return this.mode
   }
 
@@ -60,56 +105,101 @@ export class CameraRig {
     this.initialized = false
   }
 
-  update(dt, carPos, carQuat, carVel, speed, boosting) {
-    _fwd.set(0, 0, 1).applyQuaternion(carQuat)
+  // Heading the player should treat as "forward" for on-foot controls
+  forwardYaw() {
+    _v.copy(this.focus).sub(this.camera.position)
+    return Math.atan2(_v.x, _v.z)
+  }
+
+  // Shorten a camera boom if something solid is between the pivot and the camera
+  collide(pivot, desired, exclude) {
+    if (!this.physics) return desired
+    const dir = _v.copy(desired).sub(pivot)
+    const len = dir.length()
+    if (len < 0.01) return desired
+    dir.divideScalar(len)
+    const ray = new this.physics.RAPIER.Ray({ x: pivot.x, y: pivot.y, z: pivot.z }, { x: dir.x, y: dir.y, z: dir.z })
+    const hit = this.physics.world.castRay(ray, len, true, undefined, undefined, undefined, exclude)
+    if (!hit) return desired
+    const d = Math.max(0.6, hit.timeOfImpact - 0.35)
+    return pivot.clone().addScaledVector(dir, d)
+  }
+
+  // target: { pos, quat, vel, speed, boosting, body, heading }
+  update(dt, target) {
+    this.time += dt
     const cam = this.camera
-    // Look ahead in the direction of travel
+    const { pos, quat, vel } = target
+    _fwd.set(0, 0, 1).applyQuaternion(quat)
+    const heading = target.heading ?? Math.atan2(_fwd.x, _fwd.z)
+    const speed = target.speed ?? 0
+    const mode = this.mode
+
+    // Focus with a little look-ahead in the direction of travel
     const portrait = cam.aspect < 1
-    _v.set(carVel.x, 0, carVel.z).multiplyScalar(portrait ? 0.14 : 0.32)
-    if (_v.length() > (portrait ? 3 : 7)) _v.setLength(portrait ? 3 : 7)
+    const ahead = mode === 'diorama' ? (portrait ? 0.14 : 0.32) : 0.12
+    _v.set(vel.x, 0, vel.z).multiplyScalar(ahead)
+    const maxAhead = mode === 'diorama' ? (portrait ? 3 : 7) : 3
+    if (_v.length() > maxAhead) _v.setLength(maxAhead)
     this.lookAhead.x = damp(this.lookAhead.x, _v.x, 2.5, dt)
     this.lookAhead.z = damp(this.lookAhead.z, _v.z, 2.5, dt)
-    const target = _v.copy(carPos).add(this.lookAhead)
-    if (!this.initialized) this.focus.copy(target)
-    this.focus.x = damp(this.focus.x, target.x, 7, dt)
-    this.focus.y = damp(this.focus.y, target.y, 4, dt)
-    this.focus.z = damp(this.focus.z, target.z, 7, dt)
+    const tgt = new THREE.Vector3(pos.x + this.lookAhead.x, pos.y, pos.z + this.lookAhead.z)
+    if (!this.initialized) {
+      this.focus.copy(tgt)
+      this.chaseHeading = heading
+      this.yaw = heading
+    }
+    this.focus.x = damp(this.focus.x, tgt.x, mode === 'third' ? 18 : 7, dt)
+    this.focus.y = damp(this.focus.y, tgt.y, mode === 'third' ? 14 : 4, dt)
+    this.focus.z = damp(this.focus.z, tgt.z, mode === 'third' ? 18 : 7, dt)
 
     this.azimuth += angleDelta(this.azimuth, this.targetAzimuth) * (1 - Math.exp(-8 * dt))
     this.distance = damp(this.distance, this.targetDistance, 6, dt)
 
-    let desired, lookAt
-    if (this.mode === 'diorama') {
-      const d = this.distance * (1 + clamp(Math.abs(speed) / 30, 0, 1) * 0.12)
+    let desired, lookAt, fov, stiff = 9
+    if (mode === 'diorama') {
+      const d = this.distance * (1 + clamp(speed / 30, 0, 1) * 0.12) * (this.kind === 'heli' ? 1.35 : 1)
       desired = new THREE.Vector3(
         this.focus.x + Math.cos(this.azimuth) * Math.cos(this.elevation) * d,
         this.focus.y + Math.sin(this.elevation) * d,
         this.focus.z + Math.sin(this.azimuth) * Math.cos(this.elevation) * d,
       )
       lookAt = this.focus.clone()
-      this.fov = damp(this.fov, 32 + (boosting ? 4 : 0), 3, dt)
+      fov = 32 + (target.boosting ? 4 : 0)
+    } else if (mode === 'third') {
+      // auto-swing behind the player when walking and the mouse is idle
+      if (speed > 0.5 && this.time - this.lastLook > 1.6) this.yaw += angleDelta(this.yaw, heading) * Math.min(1, dt * 1.2)
+      const pivot = new THREE.Vector3(this.focus.x, this.focus.y + 1.55, this.focus.z)
+      const side = new THREE.Vector3(-Math.cos(this.yaw), 0, Math.sin(this.yaw)).multiplyScalar(0.45) // over the right shoulder
+      const back = new THREE.Vector3(-Math.sin(this.yaw) * Math.cos(this.pitch), Math.sin(this.pitch), -Math.cos(this.yaw) * Math.cos(this.pitch)).multiplyScalar(this.thirdDist)
+      const shoulder = pivot.clone().add(side)
+      desired = this.collide(shoulder, shoulder.clone().add(back), target.body)
+      lookAt = shoulder.clone().add(new THREE.Vector3(Math.sin(this.yaw), -Math.sin(this.pitch) * 0.6 + 0.05, Math.cos(this.yaw)).multiplyScalar(4))
+      fov = 55 + clamp(speed / 6, 0, 1) * 6
+      stiff = 22
     } else {
-      const heading = Math.atan2(_fwd.x, _fwd.z)
-      if (!this.initialized) this.chaseHeading = heading
-      this.chaseHeading += angleDelta(this.chaseHeading, heading) * (1 - Math.exp(-4 * dt))
-      const back = 7.5 + clamp(Math.abs(speed) / 30, 0, 1) * 1.5
-      desired = new THREE.Vector3(
-        carPos.x - Math.sin(this.chaseHeading) * back,
-        carPos.y + 2.8,
-        carPos.z - Math.cos(this.chaseHeading) * back,
-      )
-      lookAt = new THREE.Vector3(carPos.x + Math.sin(this.chaseHeading) * 4, carPos.y + 1.0, carPos.z + Math.cos(this.chaseHeading) * 4)
-      this.fov = damp(this.fov, 58 + clamp(Math.abs(speed) / 28, 0, 1) * 8 + (boosting ? 6 : 0), 3, dt)
+      // chase: behind the vehicle, mouse can swing it around temporarily
+      this.chaseHeading += angleDelta(this.chaseHeading, heading) * (1 - Math.exp(-(this.kind === 'heli' ? 2.5 : 4) * dt))
+      const looking = this.time - this.lastLook < 2.0
+      if (!looking) this.yaw += angleDelta(this.yaw, this.chaseHeading) * Math.min(1, dt * 3)
+      const yaw = looking ? this.yaw : this.chaseHeading
+      const heli = this.kind === 'heli'
+      const back = (heli ? 13 : this.kind === 'bike' ? 5.2 : 6.6) + clamp(speed / 30, 0, 1) * 1.5
+      const up = heli ? 4.2 : 2.1 + this.pitch * 2
+      const pivot = new THREE.Vector3(pos.x, pos.y + (heli ? 2 : 1.2), pos.z)
+      desired = this.collide(pivot, new THREE.Vector3(pos.x - Math.sin(yaw) * back, pos.y + up, pos.z - Math.cos(yaw) * back), target.body)
+      lookAt = new THREE.Vector3(pos.x + Math.sin(yaw) * 4, pos.y + (heli ? 1.5 : 1.1), pos.z + Math.cos(yaw) * 4)
+      fov = (heli ? 55 : 58) + clamp(speed / 28, 0, 1) * 8 + (target.boosting ? 6 : 0)
+      stiff = heli ? 5 : 7
     }
 
     if (!this.initialized) {
       cam.position.copy(desired)
       this.initialized = true
     } else {
-      const k = this.mode === 'diorama' ? 9 : 6
-      cam.position.x = damp(cam.position.x, desired.x, k, dt)
-      cam.position.y = damp(cam.position.y, desired.y, k, dt)
-      cam.position.z = damp(cam.position.z, desired.z, k, dt)
+      cam.position.x = damp(cam.position.x, desired.x, stiff, dt)
+      cam.position.y = damp(cam.position.y, desired.y, stiff, dt)
+      cam.position.z = damp(cam.position.z, desired.z, stiff, dt)
     }
     cam.lookAt(lookAt)
 
@@ -121,12 +211,12 @@ export class CameraRig {
       cam.position.z += Math.sin(t * 1.9 + 2) * s
       this.shake = damp(this.shake, 0, 5, dt)
     }
-    // Tall (portrait) screens: widen the vertical FOV so the horizontal view stays usable
-    const minHalfH = (this.mode === 'diorama' ? 13.5 : 24) * (Math.PI / 180)
+    this.fov = damp(this.fov, fov, 3, dt)
+    const minHalfH = (mode === 'diorama' ? 13.5 : 24) * (Math.PI / 180)
     const aspectFov = (2 * Math.atan(Math.tan(minHalfH) / cam.aspect) * 180) / Math.PI
-    const fov = Math.max(this.fov, aspectFov)
-    if (Math.abs(cam.fov - fov) > 0.01) {
-      cam.fov = fov
+    const f = Math.max(this.fov, aspectFov)
+    if (Math.abs(cam.fov - f) > 0.01) {
+      cam.fov = f
       cam.updateProjectionMatrix()
     }
   }

@@ -2,14 +2,32 @@
 import * as THREE from 'three'
 import { U } from '../world/Uniforms.js'
 
-const SPOTS = [
-  [10, 40], [44, 45], [67, 17], [59, -27], 'bridge', [4, -61], [-51, -31], [-63, 25], [-21, 44],
-  'ramp0', 'ramp1', 'ramp2', [-29, 21], [2, 6], 'pyramid', [27, 27], [31, -4], [-15, -9],
-  [80, -56], [30, -40], [78, 62], [-82, 70], [86, -38], [-74, -86], [-42, 32],
-]
+// Hidden around the town: bridges, ramps, landmarks, quiet streets and the countryside
+function townSpots(layout, props, town) {
+  const s = []
+  for (const b of layout.bridges) s.push({ x: b.x, z: b.z, y: b.y + 1.2 })
+  for (const r of props.ramps) s.push({ x: r.top.x + Math.sin(r.heading) * 7, z: r.top.z + Math.cos(r.heading) * 7, y: r.top.y + 2.6 })
+  const sp = town.stuntPark
+  s.push({ x: sp.cx + 6, z: sp.cz + 1.5, y: layout.getHeight(sp.cx + 6, sp.cz + 1.5) + 3.6 })
+  if (town.fountain) s.push({ x: town.fountain.x + 6.5, z: town.fountain.z })
+  if (props.pier) s.push({ x: props.pier.x, z: props.pier.z, y: props.pier.y + 1.2 })
+  if (town.park) s.push({ x: town.park.playground.x + 2, z: town.park.playground.z })
+  if (town.pitch) s.push({ x: town.pitch.x, z: town.pitch.z })
+  if (town.yard) s.push({ x: town.yard.pickup.x + 6, z: town.yard.pickup.z + 10 })
+  const gas = town.places.find((p) => p.name === 'Garage')
+  if (gas) s.push({ x: gas.door.x, z: gas.door.z + 9 })
+  const market = town.places.find((p) => p.name === 'Market')
+  if (market) s.push({ x: market.x, z: market.z })
+  const hall = town.places.find((p) => p.name === 'Town Hall')
+  if (hall) s.push({ x: hall.door.x, z: hall.door.z - 3 })
+  for (const [x, z] of [[-146, 10], [146, 30], [20, 146], [-30, -146], [-100, -25], [50, -125], [-125, 50], [75, 100]]) s.push({ x, z })
+  const lake = layout.lake
+  s.push({ x: lake.x + lake.r + 6, z: lake.z + 8 })
+  return s.slice(0, 25)
+}
 
 export class Collectibles {
-  constructor(scene, layout, props) {
+  constructor(scene, layout, props, town) {
     this.layout = layout
     this.items = []
     let saved = []
@@ -33,22 +51,9 @@ export class Collectibles {
         void main(){ float a = pow(1.0 - vUv.y, 2.0) * (0.6 + 0.4 * sin(uTime * 3.0 + vUv.y * 10.0)); gl_FragColor = vec4(vec3(1.0, 0.62, 0.28) * a * (0.08 + uNight * 0.1), 1.0); }`,
     })
 
-    SPOTS.forEach((spot, i) => {
-      let x, y, z
-      if (spot === 'bridge') {
-        const f = layout.roadFrame(layout.bridge.index)
-        x = f.x; z = f.z; y = f.y + 1.2
-      } else if (typeof spot === 'string' && spot.startsWith('ramp')) {
-        const r = props.ramps[+spot.slice(4)]
-        x = r.top.x + Math.sin(r.heading) * 7
-        z = r.top.z + Math.cos(r.heading) * 7
-        y = r.top.y + 2.6
-      } else if (spot === 'pyramid') {
-        x = -34; z = -29.5; y = layout.getHeight(x, z) + 4.2
-      } else {
-        ;[x, z] = spot
-        y = layout.getDriveHeight(x, z) + 1.15
-      }
+    townSpots(layout, props, town).forEach((spot, i) => {
+      const x = spot.x, z = spot.z
+      const y = spot.y ?? layout.getDriveHeight(x, z) + 1.15
       const g = new THREE.Group()
       g.position.set(x, y, z)
       const core = new THREE.Mesh(coreGeo, this.coreMat)

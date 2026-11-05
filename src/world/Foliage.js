@@ -141,20 +141,29 @@ function mergeSimple(geos) {
 }
 
 export class Foliage {
-  constructor(scene, physics, layout, quality) {
+  constructor(scene, physics, layout, quality, town = null) {
     const rnd = makeRandom(23)
     this.leafTex = createLeafTexture()
     const trees = []
     const bushes = []
 
-    // Tree placement: clustered groves via noise, denser towards the valley rim
+    // Explicit spots from the town plan (backyards, plaza planters)
+    for (const s of town?.treeSpots || []) {
+      if (!layout.isFree(s.x, s.z, 1.0, { roadMargin: -2 })) continue
+      const y = layout.getHeight(s.x, s.z)
+      trees.push({ x: s.x, z: s.z, y, r: rnd.range(1.5, 2.3), h: rnd.range(1.5, 2.3), rand: rnd.random() })
+      layout.occupy(s.x, s.z, 1.3)
+    }
+    // Random placement: dense park + forested outskirts, sparse inside blocks
+    const park = town?.park
+    const inPark = (x, z) => park && x > park.ix0 && x < park.ix1 && z > park.iz0 && z < park.iz1
     let attempts = 0
-    while (trees.length < 230 && attempts < 12000) {
+    while (trees.length < 620 && attempts < 40000) {
       attempts++
-      const x = rnd.range(-108, 108), z = rnd.range(-108, 108)
+      const x = rnd.range(-340, 340), z = rnd.range(-340, 340)
       const rr = Math.max(Math.abs(x), Math.abs(z))
       const grove = layout.n2(x * 0.03 + 20, z * 0.03) * 0.5 + 0.5
-      const chance = rr > 85 ? 0.7 : grove > 0.55 ? 0.6 : 0.1
+      const chance = rr > 186 ? (grove > 0.4 ? 0.8 : 0.3) : inPark(x, z) ? (grove > 0.45 ? 0.6 : 0.25) : rr > 178 ? 0.3 : 0.05
       if (rnd.random() > chance) continue
       const r = rnd.range(1.6, 2.7)
       if (!layout.isFree(x, z, 1.4, { roadMargin: 1.8 })) continue
@@ -164,9 +173,9 @@ export class Foliage {
       layout.occupy(x, z, 1.3)
     }
     attempts = 0
-    while (bushes.length < 150 && attempts < 8000) {
+    while (bushes.length < 260 && attempts < 12000) {
       attempts++
-      const x = rnd.range(-100, 100), z = rnd.range(-100, 100)
+      const x = rnd.range(-330, 330), z = rnd.range(-330, 330)
       if (!layout.isFree(x, z, 0.9, { roadMargin: 1.0 })) continue
       const y = layout.getHeight(x, z)
       if (y < -0.1) continue

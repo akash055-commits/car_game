@@ -161,7 +161,21 @@ export class Effects {
     this.lastSkid[i] = point.clone()
   }
 
-  update(dt, vp, visual) {
+  update(dt, vp, visual, heli = null) {
+    // Helicopter rotor wash kicks up dust / spray below
+    if (heli && heli.rotor > 0.4 && heli.altitude < 12) {
+      const p = heli.position
+      const k = (1 - heli.altitude / 12) * heli.rotor
+      this.washAcc = (this.washAcc || 0) + dt * 40 * k
+      const gy = this.layout.getDriveHeight(p.x, p.z)
+      while (this.washAcc > 1) {
+        this.washAcc -= 1
+        const a = Math.random() * Math.PI * 2, r = 2 + Math.random() * 3
+        const kind = U.uWet.value > 0.5 || this.layout.isWater(p.x, p.z) ? KIND.spray : KIND.dust
+        this.spawn(kind, new THREE.Vector3(p.x + Math.cos(a) * r, gy + 0.2, p.z + Math.sin(a) * r), new THREE.Vector3(Math.cos(a) * 7, 0.6, Math.sin(a) * 7), 0.9, 1.2, 2.8)
+      }
+    }
+    if (!vp) return this.integrate(dt)
     const lv = vp.body.linvel()
     const speed = Math.hypot(lv.x, lv.z)
     const wet = U.uWet.value
@@ -221,6 +235,10 @@ export class Effects {
       for (let k = 0; k < 3; k++) this.spawn(KIND.spray, new THREE.Vector3(p.x + (Math.random() - 0.5) * 2, WORLD.waterLevel + 0.1, p.z + (Math.random() - 0.5) * 3), new THREE.Vector3((Math.random() - 0.5) * 3, 2 + Math.random() * 2, (Math.random() - 0.5) * 3), 0.6, 0.9, 1.8)
     }
 
+    this.integrate(dt)
+  }
+
+  integrate(dt) {
     // Integrate + upload
     let n = 0
     const P = this.aPos.array, D = this.aData.array
