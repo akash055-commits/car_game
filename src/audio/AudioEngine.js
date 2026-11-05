@@ -4,6 +4,7 @@ import { EngineSynth, createNoiseBuffer } from './EngineSynth.js'
 import { Sfx } from './Sfx.js'
 import { Ambience } from './Ambience.js'
 import { MusicPlayer } from './MusicPlayer.js'
+import { HeliSynth, JetNoise } from './Machines.js'
 
 const DEFAULTS = { master: 0.8, music: 0.3, sfx: 0.9, musicMuted: false, muted: false }
 
@@ -27,6 +28,9 @@ export class AudioEngine {
     this.prevThrottle = 0
     this.popBudget = 0
     this.lastGear = 1
+    this.engineLevel = 0
+    this.voiceKind = 'car'
+    this.season = 'autumn'
 
     document.addEventListener('visibilitychange', () => {
       if (!this.ctx) return
@@ -77,9 +81,16 @@ export class AudioEngine {
     this.engine = new EngineSynth(ctx, this.sfxBus, this.buffers.white)
     this.sfx = new Sfx(ctx, this.sfxBus, this.reverbSend, this.buffers)
     this.ambience = new Ambience(ctx, this.sfxBus, this.buffers)
+    this.heli = new HeliSynth(ctx, this.sfxBus, this.buffers)
+    this.jets = new JetNoise(ctx, this.sfxBus, this.buffers)
     this.buildDrivingLayers()
     this.applyVolumes()
-    this.music.start()
+    this.music.start(this.season)
+  }
+
+  setSeason(name) {
+    this.season = name
+    this.music.setSeason(name)
   }
 
   buildDrivingLayers() {
@@ -175,57 +186,89 @@ export class AudioEngine {
     return !this.settings.muted
   }
 
-  // Called every frame with the driving + world state
+  // Called every frame with the vehicle + world state.
+  // st: { active (vehicle entry or null), heli (heli entry), listener {x,y,z}, planes, wet, ambience }
   update(dt, st) {
     if (!this.ctx || this.ctx.state !== 'running') return
     const t = this.ctx.currentTime
-    const vp = st.vehicle
-    const speed = Math.abs(vp.speed)
+    const active = st.active
+    const ground = active && active.type !== 'heli' ? active.phys : null
 
-    // Engine
-    const shifting = vp.shiftTimer > 0.06
-    if (vp.gear !== this.lastGear && vp.lastShift === 1 && vp.throttle > 0.5 && vp.rpm > 4500) this.sfx.pop(0.08)
-    this.lastGear = vp.gear
-    this.engine.update({
-      rpm: vp.rpm,
-      throttle: vp.throttle,
-      load: vp.load,
-      speed,
-      gear: vp.gear,
-      limiter: vp.rpm > 6850 && vp.throttle > 0.5 && !vp.boosting,
-      shift: shifting,
-    }, t)
-
-    // Exhaust pops on lift-off from high revs
-    if (this.prevThrottle > 0.6 && vp.throttle < 0.25 && vp.rpm > 3800) this.popBudget = 3 + Math.floor(Math.random() * 4)
-    if (this.popBudget > 0 && Math.random() < dt * 9) {
-      this.popBudget--
-      this.sfx.pop(0.1 + Math.random() * 0.12)
+    // Engine: only while you're driving the buggy or riding the bike
+    this.engineLevel += ((ground ? 1 : 0) - this.engineLevel) * Math.min(1, dt * (ground ? 6 : 3))
+    this.engine.setLevel(this.engineLevel)
+    if (ground && active.type !== this.voiceKind) {
+      this.voiceKind = active.type
+      this.engine.setVoice(active.type)
     }
-    this.prevThrottle = vp.throttle
+    const vp = ground
+    const speed = vp ? Math.abs(vp.speed) : 0
+    if (vp) {
+      const shifting = vp.shiftTimer > 0.06
+      if (vp.gear !== this.lastGear && vp.lastShift === 1 && vp.throttle > 0.5 && vp.rpm > vp.cfg.upRpm * 0.7) this.sfx.pop(0.06)
+      this.lastGear = vp.gear
+      this.engine.update({
+        rpm: vp.rpm, throttle: vp.throttle, load: vp.load, speed, gear: vp.gear,
+        limiter: vp.rpm > vp.cfg.redline - 50 && vp.throttle > 0.5 && !vp.boosting, shift: shifting,
+      }, t)
+      // Exhaust pops on lift-off from high revs (fewer, softer)
+      if (this.prevThrottle > 0.6 && vp.throttle < 0.25 && vp.rpm > vp.cfg.upRpm * 0.62) this.popBudget = 1 + Math.floor(Math.random() * 3)
+      if (this.popBudget > 0 && Math.random() < dt * 7) {
+        this.popBudget--
+        this.sfx.pop(0.06 + Math.random() * 0.06)
+      }
+      this.prevThrottle = vp.throttle
+    } else this.engine.update({ rpm: 900, throttle: 0, load: 0, speed: 0, gear: 1 }, t)
 
-    // Tyres + surfaces
-    let roadSlip = 0, dirt = 0, contact = 0
-    for (let i = 0; i < 4; i++) {
-      if (!vp.wheelState(i).contact) continue
-      contact++
-      if (vp.wheelSurface[i] === 'dirt') dirt++
-      else roadSlip = Math.max(roadSlip, vp.slip[i])
+    // Tyres + surfaces. The squeal now only follows real sideways sliding (drifts, hard
+    // cornering) — never plain acceleration or braking — and sits well under the engine.
+    let side = 0, dirt = 0, contact = 0
+    if (vp) {
+      for (let i = 0; i < 4; i++) {
+        if (!vp.wheelState(i).contact) continue
+        contact++
+        if (vp.wheelSurface[i] === 'dirt') dirt++
+        else side = Math.max(side, vp.sideSlip[i])
+      }
     }
     const onDirt = contact ? dirt / contact : 0
     const sp = Math.min(speed / 25, 1)
     const wet = st.wet
-    const squeal = speed > 2.5 ? Math.max(0, roadSlip - 0.35) * 1.6 * (1 - wet * 0.7) : 0
-    this.squeal.gain.setTargetAtTime(Math.min(squeal, 1) * 0.16, t, 0.05)
-    this.squealOsc.frequency.setTargetAtTime(880 + Math.random() * 160 + sp * 120, t, 0.08)
-    this.gravel.gain.setTargetAtTime(onDirt * sp * 0.16 * (contact ? 1 : 0), t, 0.08)
-    this.roll.gain.setTargetAtTime(sp * (0.18 + onDirt * 0.12 + wet * 0.08) * (contact ? 1 : 0.2), t, 0.1)
+    const bike = active?.type === 'bike'
+    const squeal = speed > 5 ? Math.max(0, side - 0.5) * 2 * (1 - wet * 0.8) * (bike ? 0.4 : 1) : 0
+    this.squeal.gain.setTargetAtTime(Math.min(squeal, 1) * 0.055, t, 0.12)
+    this.squealOsc.frequency.setTargetAtTime(820 + Math.random() * 90 + sp * 80, t, 0.12)
+    this.gravel.gain.setTargetAtTime(onDirt * sp * 0.13 * (contact ? 1 : 0), t, 0.08)
+    this.roll.gain.setTargetAtTime(vp ? sp * (0.15 + onDirt * 0.1 + wet * 0.07) * (contact ? 1 : 0.2) : 0, t, 0.1)
     this.rollFilter.frequency.setTargetAtTime(160 + sp * 300 + wet * 500, t, 0.1)
-    this.windRush.gain.setTargetAtTime(sp * sp * 0.09, t, 0.15)
-    this.windFilter.frequency.setTargetAtTime(500 + sp * 1200, t, 0.15)
-    this.splash.gain.setTargetAtTime(vp.inWater > 0 ? Math.min(speed / 8, 1) * 0.25 : wet * sp * 0.05, t, 0.1)
+    // wind: from any vehicle's airspeed (bike riders hear more of it)
+    const air = active ? Math.min(Math.abs(active.phys.speed) / 25, 1.4) : 0
+    this.windRush.gain.setTargetAtTime(air * air * (bike ? 0.12 : 0.07), t, 0.15)
+    this.windFilter.frequency.setTargetAtTime(500 + air * 1100, t, 0.15)
+    this.splash.gain.setTargetAtTime(vp && vp.inWater > 0 ? Math.min(speed / 8, 1) * 0.22 : vp ? wet * sp * 0.04 : 0, t, 0.1)
+    if (vp && vp.landing > 0.05) this.sfx.landing(vp.landing)
 
-    if (vp.landing > 0.05) this.sfx.landing(vp.landing)
+    // Helicopter (heard whether you're flying it or watching it spin up)
+    const L = st.listener
+    if (st.heli) {
+      const h = st.heli.phys
+      const p = st.heli.pos
+      const inside = active === st.heli
+      this.heli.update(t, { rotor: h.rotor, load: inside ? Math.max(0, h.throttle || 0) : 0.4, dist: Math.hypot(p.x - L.x, p.y - L.y, p.z - L.z), inside, speed: Math.abs(h.speed) })
+    }
+
+    // Airliners: roar from the loudest nearby aircraft
+    let jet = 0, whine = 0
+    for (const pl of st.planes || []) {
+      const d = Math.hypot(pl.pos.x - L.x, pl.pos.y - L.y, pl.pos.z - L.z)
+      const thrust = pl.phase === 'takeoff' ? (pl.s < 420 ? 1 : 0.45) : pl.phase === 'rollout' ? 0.65 : pl.phase === 'park' ? 0.03 : 0.18
+      const size = pl.model.kind === 'jet' ? 1 : 0.35
+      const ref = pl.model.kind === 'jet' ? 70 : 35
+      const a = 1 / (1 + (d / ref) ** 2)
+      jet = Math.max(jet, thrust * size * a)
+      if (pl.phase !== 'park') whine = Math.max(whine, size * a * (thrust < 0.5 ? 1 : 0.5))
+    }
+    this.jets.update(t, Math.min(1, jet), Math.min(1, whine))
 
     this.ambience.update({ ...st.ambience, dt })
   }

@@ -1,47 +1,68 @@
-// Quiet background playlist (CC0 tracks from brunosimon/folio-2025). Streams one track at
-// a time, fades in gently and moves on to the next track when one ends.
+// Quiet background music, one CC0 track per season (from brunosimon/folio-2025):
+// Autumn "Sudo", Spring "Baguira", Monsoon "Boy". Streams one track at a time, loops it
+// with a gentle pause, and cross-fades when the season changes.
 import { Howl } from 'howler'
 
 const BASE = import.meta.env.BASE_URL
-const TRACKS = [
-  { name: 'Sudo', src: `${BASE}sounds/music/sudo.mp3` },
-  { name: 'Boy', src: `${BASE}sounds/music/boy.mp3` },
-  { name: 'Baguira', src: `${BASE}sounds/music/baguira.mp3` },
-]
-const MAX_VOLUME = 0.4 // slider 1.0 -> 0.4, default slider 0.3 -> 0.12 (very quiet)
+const TRACKS = {
+  autumn: { name: 'Sudo', src: `${BASE}sounds/music/sudo.mp3`, gain: 1 },
+  spring: { name: 'Baguira', src: `${BASE}sounds/music/baguira.mp3`, gain: 0.66 }, // louder master
+  monsoon: { name: 'Boy', src: `${BASE}sounds/music/boy.mp3`, gain: 1 },
+}
+const MAX_VOLUME = 0.28 // slider 1.0 -> 0.28; the default slider 0.3 sits around 0.08: subtle
+const LOOP_GAP = 6000
 
 export class MusicPlayer {
   constructor(settings) {
     this.settings = settings
-    this.index = Math.floor(Math.random() * TRACKS.length)
+    this.season = 'autumn'
     this.howl = null
+    this.track = null
     this.onTrack = null
     this.started = false
   }
 
   get target() {
-    return this.settings.musicMuted ? 0 : this.settings.music * MAX_VOLUME * this.settings.master
+    const g = this.track ? this.track.gain : 1
+    return this.settings.musicMuted ? 0 : this.settings.music * MAX_VOLUME * this.settings.master * g
   }
 
-  start() {
+  start(season = this.season) {
     if (this.started) return
     this.started = true
-    this.play(this.index)
+    this.season = season
+    this.play(TRACKS[season])
   }
 
-  play(i) {
+  setSeason(season) {
+    if (season === this.season && this.howl) return
+    this.season = season
+    if (this.started) this.play(TRACKS[season])
+  }
+
+  play(track) {
+    clearTimeout(this.gapTimer)
     if (this.howl) {
       const old = this.howl
-      old.fade(old.volume(), 0, 1500)
-      setTimeout(() => old.unload(), 1600)
+      old.off('end')
+      old.fade(old.volume(), 0, 2500)
+      setTimeout(() => old.unload(), 2600)
     }
-    const track = TRACKS[i]
+    this.track = track
     const howl = new Howl({
       src: [track.src],
       html5: true,
       volume: 0,
-      onend: () => this.next(),
-      onloaderror: () => setTimeout(() => this.next(), 4000),
+      onloaderror: () => { this.gapTimer = setTimeout(() => this.play(TRACKS[this.season]), 5000) },
+    })
+    howl.on('end', () => {
+      if (this.howl !== howl) return
+      this.gapTimer = setTimeout(() => {
+        if (this.howl !== howl) return
+        howl.volume(0)
+        howl.play()
+        howl.fade(0, this.target, 4000)
+      }, LOOP_GAP)
     })
     howl.once('play', () => {
       howl.fade(0, this.target, 4000)
@@ -49,11 +70,6 @@ export class MusicPlayer {
     })
     howl.play()
     this.howl = howl
-  }
-
-  next() {
-    this.index = (this.index + 1) % TRACKS.length
-    this.play(this.index)
   }
 
   refreshVolume() {
@@ -69,6 +85,6 @@ export class MusicPlayer {
   }
 
   get trackName() {
-    return TRACKS[this.index].name
+    return this.track ? this.track.name : ''
   }
 }

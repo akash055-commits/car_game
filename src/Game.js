@@ -14,9 +14,10 @@ import { Terrain, buildTerrainPhysics } from './world/Terrain.js'
 import { Town } from './world/Town.js'
 import { Airport } from './world/Airport.js'
 import { CrowdRig } from './characters/Rig.js'
-import { Emotes } from './characters/Emotes.js'
+import { Emotes, EMOTE } from './characters/Emotes.js'
 import { People } from './characters/People.js'
 import { Construction } from './characters/Construction.js'
+import { Traffic } from './traffic/Traffic.js'
 import { Water } from './world/Water.js'
 import { Grass } from './world/Grass.js'
 import { Foliage } from './world/Foliage.js'
@@ -32,9 +33,11 @@ import { BikeVisual } from './vehicle/BikeVisual.js'
 import { HeliPhysics, HeliVisual } from './vehicle/Helicopter.js'
 import { Player } from './player/Player.js'
 import { AIRPORT } from './world/Layout.js'
+import { Aviation } from './aviation/Aviation.js'
 import { CameraRig } from './vehicle/CameraRig.js'
 import { Effects } from './vehicle/Effects.js'
 import { Collectibles } from './gameplay/Collectibles.js'
+import { Activities } from './gameplay/Activities.js'
 
 const nextFrame = () => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)))
 
@@ -73,6 +76,7 @@ export class Game {
     this.town = new Town(this.scene, this.physics, this.layout)
     await nextFrame()
     this.airport = new Airport(this.scene, this.physics, this.layout, this.town)
+    this.aviation = new Aviation(this.scene, this.physics, this.layout)
     progress(0.35, 'Lighting the streets')
     this.props = new Props(this.scene, this.physics, this.layout, this.town)
     this.collectibles = new Collectibles(this.scene, this.layout, this.props, this.town)
@@ -121,14 +125,25 @@ export class Game {
       emotes: this.emotes,
       carNear: (x, z, r) => {
         const c = this.crowdCtx.car
-        return c.speed > 1.5 && (c.x - x) ** 2 + (c.z - z) ** 2 < r * r
+        return (c.speed > 1.5 && (c.x - x) ** 2 + (c.z - z) ** 2 < r * r) || (this.traffic && this.traffic.near(x, z, r))
       },
       onVoice: (kind, x, z) => this.emit('voice', kind, x, z),
       onHammer: (x, z) => this.emit('hammer', x, z),
     }
     this.construction = new Construction(this.scene, this.physics, this.layout, this.town, this.crowd, this.quality)
+    this.traffic = new Traffic(this.scene, this.physics, this.layout, this.crowd, this.quality)
     this.construction.on('complete', (site) => this.emit('siteComplete', site))
     this.construction.on('smash', (site, n) => this.emit('siteSmash', site, n))
+    this.activities = new Activities(this.scene, this.layout, this.town, this.construction, this.crowd, this.emotes)
+    for (const ev of ['start', 'end', 'objective', 'coins', 'toast', 'countdown', 'checkpoint', 'rallyDone', 'delivered', 'fare', 'summary', 'passengerUpset'])
+      this.activities.on(ev, (...a) => this.emit(`act:${ev}`, ...a))
+    this.actCtx = {
+      pos: () => this.carPos,
+      speed: () => (this.active ? Math.abs(this.active.phys.speed) : this.player.speed),
+      inVehicle: () => !!this.active && this.active.type !== 'heli',
+      vehicleType: () => this.active?.type || 'foot',
+      passengerSeat: () => this.passengerSeat(),
+    }
     await nextFrame()
 
     progress(0.88, 'Fuelling the vehicles')
@@ -144,7 +159,12 @@ export class Game {
     const heli = new HeliPhysics(this.physics, { x: hp.x, y: this.layout.getHeight(hp.x, hp.z) + 0.1, z: hp.z, heading: 0 })
     this.addVehicle('heli', 'Helicopter', heli, new HeliVisual(this.scene, heli), { seat: new THREE.Vector3(0.38, 0.95, 0.75), exitSide: 1, width: 2.2, length: 9 })
     this.player = new Player(this.physics, this.crowd, this.layout, { x: carFrame.x, y: carFrame.y, z: carFrame.z, heading: carFrame.heading })
-    this.player.onStep = (k) => this.emit('footstep', k)
+    this.player.onStep = (k) => {
+      const p = this.player.pos
+      const q = this.layout.queryRoad(p.x, p.z)
+      const surf = q.d < WORLD.roadHalfWidth + WORLD.sidewalk + 0.3 ? 'road' : p.y - this.layout.getHeight(p.x, p.z) > 0.3 ? 'wood' : 'grass'
+      this.emit('footstep', k, surf)
+    }
     this.enterVehicle(this.vehicles[0], true)
     this.carPos = new THREE.Vector3()
     this.carQuat = new THREE.Quaternion()
@@ -179,6 +199,12 @@ export class Game {
         this.lastShake = now
         this.lastShakeStrength = strength
       }
+      if (isCar && strength > 0.18) this.activities.bump()
+      if (isCar && other?.kind === 'traffic' && strength > 0.03) {
+        const h = t1?.kind === 'traffic' ? h1 : h2
+        const col = this.physics.world.getCollider(h)
+        if (col) this.traffic.rammed(col.parent(), this.emotes, (x, z) => this.emit('honk', x, z))
+      }
       this.emit('impact', { force, strength: isCar ? strength : clamp(force / 8000, 0, 1), material: other?.material || 'ground', withCar: isCar, kind: other?.kind })
     }
     this.collectibles.on('collect', (it, n, total) => {
@@ -197,6 +223,8 @@ export class Game {
       const inHeli = this.active?.type === 'heli'
       if (code === 'KeyF' || (code === 'KeyE' && !inHeli)) this.toggleVehicle()
       if (code === 'KeyI' && inHeli) this.emit('ignition', this.active.phys.ignition())
+      if (code === 'KeyG') this.toggleActivity()
+      if (code === 'KeyJ') this.emit('openActivities')
       if (code === 'KeyR') this.respawn()
       if (code === 'KeyC') this.emit('camera', this.rig.toggle())
       if (code === 'Digit1') this.seasons.set('autumn')
@@ -210,6 +238,48 @@ export class Game {
   start() {
     this.started = true
     this.input.enabled = true
+  }
+
+  // G: start the activity whose marker you're standing / parked in, or quit the current one
+  toggleActivity() {
+    const acts = this.activities
+    if (acts.current) return acts.stop('quit')
+    const s = acts.nearStart(this.carPos)
+    if (!s) return this.emit('notice', 'Find a glowing marker to start an activity (J for the list)')
+    if (!this.active || this.active.type === 'heli') return this.emit('notice', 'Grab the buggy or the motorbike first')
+    acts.clearWaypoint()
+    acts.start(s.id, this.actCtx)
+  }
+
+  // Horn: nearby people stop, turn to look and some grumble or wave
+  honk() {
+    const p = this.carPos
+    const now = performance.now()
+    if (now - (this.lastHonk || 0) < 700) return
+    this.lastHonk = now
+    let n = 0
+    for (const c of this.people.all) {
+      if (c.reaction || !c.visible || c.sit > 0.5) continue
+      const d2 = (c.x - p.x) ** 2 + (c.z - p.z) ** 2
+      if (d2 > 16 * 16) continue
+      c.heading = Math.atan2(p.x - c.x, p.z - c.z)
+      c.reaction = { type: 'recover', t: 0, d: 0.8 + Math.random() * 0.6 }
+      if (n++ < 4) {
+        const r = Math.random()
+        this.emotes.show(c, r < 0.4 ? EMOTE.angry : r < 0.7 ? EMOTE.question : EMOTE.wave, 1.4)
+        if (r < 0.4) c.fist = 1
+        if (n === 1) this.emit('voice', r < 0.4 ? 'angry' : 'hey', c.x, c.z)
+      }
+    }
+  }
+
+  // Where a taxi passenger sits in the current vehicle (world space)
+  passengerSeat() {
+    const v = this.active || this.lastVehicle
+    const local = v.type === 'bike' ? new THREE.Vector3(0, 0.82, -0.62) : new THREE.Vector3(-0.36, 0.6, -0.38)
+    const p = local.applyQuaternion(v.quat).add(v.pos)
+    const heading = new THREE.Euler().setFromQuaternion(v.quat, 'YXZ').y
+    return { x: p.x, y: p.y, z: p.z, heading, lean: v.visual.leanAngle || 0 }
   }
 
   toggleNight() {
@@ -401,7 +471,8 @@ export class Game {
     if (this.promptTimer <= 0) {
       this.promptTimer = 0.2
       const near = !active ? this.nearbyVehicle() : null
-      this.emit('prompt', active ? active : null, near)
+      const start = this.activities.nearStart(this.carPos)
+      this.emit('prompt', active ? active : null, near, start)
     }
 
     // Atmosphere
@@ -444,6 +515,7 @@ export class Game {
     // Gameplay
     this.town.update(this.dayCycle.time, night)
     this.airport.update(elapsed, night, U.uWindDir.value)
+    this.aviation.update(Math.min(dt, 0.05), elapsed)
     // People: threat = the player's vehicle
     const cc = this.crowdCtx.car
     cc.x = this.carPos.x; cc.y = this.carPos.y; cc.z = this.carPos.z
@@ -468,9 +540,12 @@ export class Game {
       vinfo = { x: this.carPos.x, y: this.carPos.y + (active.type === 'heli' ? 1 : 0.5), z: this.carPos.z, vx: lv.x, vz: lv.z, speed: Math.hypot(lv.x, lv.z), r, h: active.type === 'heli' ? 1.6 : 1.0, mass: active.phys.mass }
     }
     this.construction.update(Math.min(dt, 0.05), elapsed, this.crowdCtx, vinfo)
+    this.traffic.update(Math.min(dt, 0.05), { player: active ? { x: this.carPos.x, z: this.carPos.z } : { x: this.player.pos.x, z: this.player.pos.z }, walkers: this.people.walkers })
     this.crowd.focus.set(this.camera.position.x, 0, this.camera.position.z)
     this.crowd.update(elapsed)
     this.emotes.update(dt)
+    this.activities.update(Math.min(dt, 0.05), elapsed, this.actCtx)
+    this.activities.checkWaypoint(this.carPos)
     if (this.started) {
       this.collectibles.update(dt, elapsed, this.carPos)
     } else this.collectibles.update(dt, elapsed, new THREE.Vector3(1e4, 0, 0))

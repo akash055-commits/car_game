@@ -39,7 +39,8 @@ export function makeAirliner(liveryIndex = 0) {
   g.add(new THREE.Mesh(new THREE.CylinderGeometry(R + 0.02, R + 0.02, len - 2, 20, 1, true, -0.55, 1.1).rotateX(Math.PI / 2).rotateZ(Math.PI / 2), stripe))
   g.add(new THREE.Mesh(new THREE.CylinderGeometry(R + 0.03, R + 0.03, len - 4, 20, 1, true, 0.15, 0.06).rotateX(Math.PI / 2).translate(0, 0, 0), dark))
   g.add(new THREE.Mesh(new THREE.CylinderGeometry(R + 0.03, R + 0.03, len - 4, 20, 1, true, -0.21, 0.06).rotateX(Math.PI / 2).rotateY(Math.PI), dark))
-  const cockpit = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.45, 0.9).translate(0, 0.75, len / 2 + 1.6), dark)
+  const cockpit = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.45, 0.9), dark)
+  cockpit.position.set(0, 0.95, len / 2 + 1.7)
   cockpit.rotation.x = -0.35
   g.add(cockpit)
 

@@ -1,6 +1,7 @@
-// DOM interface: loader / start card, HUD (lap timer, embers, speedometer, toolbar),
-// toasts, now-playing card and the settings panel.
+// DOM interface: loader / start card, HUD (activity panel, embers + coins, context prompt,
+// speedometer / altimeter, toolbar), toasts, now-playing card, activities menu and settings.
 import { formatTime } from '../gameplay/Circuit.js'
+import { ACTIVITY_INFO } from '../gameplay/Activities.js'
 
 const svg = (path, vb = '0 0 24 24') => `<svg viewBox="${vb}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${path}</svg>`
 
@@ -21,6 +22,8 @@ export const ICONS = {
   drift: svg('<path d="M4 16c4 0 4-8 8-8s4 8 8 8"/><path d="M4 20h16"/>'),
   reset: svg('<path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/>'),
   close: svg('<path d="M6 6l12 12M18 6L6 18"/>'),
+  flag: svg('<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>'),
+  coin: svg('<circle cx="12" cy="12" r="8.5" fill="currentColor" stroke="none" opacity=".9"/><path d="M12 7.5v9M14.5 9.5c-.6-.8-1.5-1.2-2.5-1.2-1.4 0-2.5.8-2.5 1.9 0 2.6 5 1.4 5 4 0 1.1-1.1 1.9-2.5 1.9-1.1 0-2-.4-2.6-1.2" stroke="#fff8ee"/>'),
 }
 
 // When the game is published inside a website (e.g. /games/seasons-valley/), offer a way home
@@ -64,16 +67,16 @@ export class UI {
       <div class="loader-card">
         ${LOGO}
         <h1>Seasons Valley</h1>
-        <p class="tagline">A cozy drive through autumn, spring &amp; monsoon</p>
+        <p class="tagline">A living little town to drive, ride, fly &amp; wander · autumn, spring &amp; monsoon</p>
         <div class="progress"><div></div></div>
         <div class="status">Preparing…</div>
-        <button class="start-btn hidden" type="button">Start driving</button>
+        <button class="start-btn hidden" type="button">Start exploring</button>
         <div class="legend">
           ${this.isTouch
-            ? '<span>Joystick to drive</span><span>Hold <b>Drift</b> to slide</span><span>Drag to look around</span>'
-            : `<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive</span>
-               <span><kbd>Space</kbd> drift</span><span><kbd>Shift</kbd> boost</span>
-               <span><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> seasons</span><span><kbd>N</kbd> night</span>`}
+            ? '<span>Joystick to drive &amp; walk</span><span>Tap the prompt to get in / out</span><span>Drag to look around</span>'
+            : `<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive / walk</span>
+               <span><kbd>F</kbd> get in / out</span><span><kbd>Space</kbd> drift / jump</span><span><kbd>Shift</kbd> boost / run</span>
+               <span><kbd>J</kbd> activities</span><span><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> seasons</span><span><kbd>N</kbd> night</span>`}
         </div>
         <div class="credits">Best with sound on · Music: “Sudo”, “Boy”, “Baguira” (CC0) via Bruno Simon</div>
         ${HOME_LINK}
@@ -123,13 +126,19 @@ export class UI {
     const R = 62, C = 2 * Math.PI * R, ARC = 0.75
     this.arc = { C, ARC }
     hud.innerHTML = `
-      <div class="panel lap">
-        <div class="label"><span class="lap-n">Free drive</span><span class="lap-state"></span></div>
-        <div class="time">0:00.00</div>
-        <div class="rows"><b>BEST</b><span class="best">--:--.--</span><b>LAST</b><span class="last">--:--.--</span></div>
-        <div class="dots">${'<i></i>'.repeat(6)}</div>
+      <div class="panel lap activity hidden">
+        <div class="label"><span class="act-name">Town Courier</span><span class="act-step"></span></div>
+        <div class="act-goal">—</div>
+        <div class="time act-time">0:00</div>
+        <div class="act-bar"><i></i></div>
+        <div class="rows"><b>EARNED</b><span class="act-coins">0</span></div>
       </div>
-      <div class="panel embers" title="Embers found">${ICONS.ember}<span class="n">0</span><span class="of">/ 25</span></div>
+      <div class="pills">
+        <div class="panel embers" title="Embers found">${ICONS.ember}<span class="n">0</span><span class="of">/ 25</span></div>
+        <div class="panel coins" title="Coins">${ICONS.coin}<span class="n">0</span></div>
+      </div>
+      <div class="panel prompt hidden"><kbd class="p-key">F</kbd><span class="p-text">Drive</span></div>
+      <div class="countdown hidden"></div>
       <div class="toolbar">
         <div class="panel group seasons">
           <button class="icon-btn" data-season="autumn" data-tip="Autumn (1)" aria-label="Autumn">${ICONS.autumn}</button>
@@ -137,6 +146,7 @@ export class UI {
           <button class="icon-btn" data-season="monsoon" data-tip="Monsoon (3)" aria-label="Monsoon">${ICONS.monsoon}</button>
         </div>
         <div class="panel group">
+          <button class="icon-btn" data-act="activities" data-tip="Activities (J)" aria-label="Activities">${ICONS.flag}</button>
           <button class="icon-btn" data-act="night" data-tip="Day / night (N)" aria-label="Toggle night">${ICONS.moon}</button>
           <button class="icon-btn desk-only" data-act="camera" data-tip="Camera (C)" aria-label="Camera">${ICONS.camera}</button>
           <button class="icon-btn desk-only" data-act="music" data-tip="Music (M)" aria-label="Music">${ICONS.music}</button>
@@ -157,26 +167,21 @@ export class UI {
       </div>
       <div class="panel now-playing dim"><div class="disc"></div><div><small>Now playing</small><b class="track">—</b></div></div>
       <div class="toasts"></div>
-      <div class="panel hint">
-        <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive</span>
-        <span><kbd>Space</kbd> drift</span>
-        <span><kbd>Shift</kbd> boost</span>
-        <span><kbd>R</kbd> reset</span>
-        <span><kbd>C</kbd> camera</span>
-        <span><kbd>H</kbd> horn</span>
-        <span>drag to orbit</span>
-      </div>`
+      <div class="panel hint"></div>`
     this.root.appendChild(hud)
     this.hud = hud
     this.hint = this.el(hud, '.hint')
     this.dom = {
-      lapN: this.el(hud, '.lap-n'), lapState: this.el(hud, '.lap-state'), time: this.el(hud, '.time'),
-      best: this.el(hud, '.best'), last: this.el(hud, '.last'), dots: [...hud.querySelectorAll('.dots i')],
+      act: this.el(hud, '.activity'), actName: this.el(hud, '.act-name'), actStep: this.el(hud, '.act-step'), actGoal: this.el(hud, '.act-goal'),
+      actTime: this.el(hud, '.act-time'), actBar: this.el(hud, '.act-bar i'), actCoins: this.el(hud, '.act-coins'),
+      coins: this.el(hud, '.coins'), coinsN: this.el(hud, '.coins .n'), prompt: this.el(hud, '.prompt'), promptKey: this.el(hud, '.p-key'), promptText: this.el(hud, '.p-text'),
+      countdown: this.el(hud, '.countdown'), unit: this.el(hud, '.unit'),
       embers: this.el(hud, '.embers'), embersN: this.el(hud, '.embers .n'), embersOf: this.el(hud, '.embers .of'),
       kmh: this.el(hud, '.kmh'), gear: this.el(hud, '.gear'), value: this.el(hud, '.value'), rpm: this.el(hud, '.rpm'), boost: this.el(hud, '.boost'),
       np: this.el(hud, '.now-playing'), npTrack: this.el(hud, '.now-playing .track'), toasts: this.el(hud, '.toasts'),
       night: this.el(hud, '[data-act="night"]'), music: this.el(hud, '[data-act="music"]'), sound: this.el(hud, '[data-act="sound"]'), camera: this.el(hud, '[data-act="camera"]'),
     }
+    this.dom.prompt.addEventListener('click', () => this.fire('promptTap', this.dom.promptKey.textContent))
     hud.querySelectorAll('[data-season]').forEach((b) => b.addEventListener('click', () => this.fire('season', b.dataset.season)))
     hud.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', () => this.fire(b.dataset.act)))
   }
@@ -236,36 +241,127 @@ export class UI {
     const now = performance.now()
     if (now - this.lastHud < 50) return
     this.lastHud = now
-    const vp = game.vehicle
-    const kmh = Math.round(Math.abs(vp.speed) * 3.6)
-    this.dom.kmh.textContent = kmh
+    const active = game.active
     const { C, ARC } = this.arc
-    const frac = Math.min(kmh / 120, 1)
-    this.dom.value.setAttribute('stroke-dasharray', `${C * ARC * frac} ${C}`)
-    this.dom.value.style.opacity = frac > 0.01 ? 1 : 0
-    const rpmFrac = Math.min(vp.rpm / 7200, 1)
-    this.dom.rpm.setAttribute('stroke-dasharray', `${(C - 2 * Math.PI * 11) * ARC * rpmFrac} ${C}`)
-    this.dom.rpm.classList.toggle('red', vp.rpm > 6500)
-    this.dom.gear.textContent = vp.gear === -1 ? 'R' : Math.abs(vp.speed) < 0.3 && vp.throttle < 0.05 ? 'N' : vp.gear
-    this.dom.boost.classList.toggle('on', vp.boosting)
-
-    const c = game.circuit
-    if (!c) return
-    if (c.running) {
-      this.dom.lapN.textContent = `Lap ${c.lap}`
-      this.dom.time.textContent = formatTime(c.current)
-      this.dom.lapState.textContent = `${c.next}/6`
-    } else {
-      this.dom.lapN.textContent = 'Free drive'
-      this.dom.time.textContent = formatTime(0)
-      this.dom.lapState.textContent = 'cross the arch'
+    this.dom.speedo = this.dom.speedo || this.el(this.hud, '.speedo')
+    this.dom.speedo.classList.toggle('hidden', !active)
+    if (active) {
+      const vp = active.phys
+      if (active.type === 'heli') {
+        const alt = Math.max(0, Math.round(vp.altitude))
+        this.dom.kmh.textContent = alt
+        this.dom.unit.textContent = 'M ALT'
+        const frac = Math.min(Math.abs(vp.speed) * 3.6 / 200, 1)
+        this.dom.value.setAttribute('stroke-dasharray', `${C * ARC * frac} ${C}`)
+        this.dom.value.style.opacity = frac > 0.01 ? 1 : 0
+        this.dom.rpm.setAttribute('stroke-dasharray', `${(C - 2 * Math.PI * 11) * ARC * vp.rotor} ${C}`)
+        this.dom.rpm.classList.toggle('red', false)
+        this.dom.gear.textContent = vp.state === 'off' ? 'OFF' : vp.state === 'starting' ? 'START' : vp.state === 'stopping' ? 'STOP' : `${Math.round(Math.abs(vp.speed) * 3.6)}`
+        this.dom.boost.classList.remove('on')
+      } else {
+        const kmh = Math.round(Math.abs(vp.speed) * 3.6)
+        this.dom.kmh.textContent = kmh
+        this.dom.unit.textContent = 'KM/H'
+        const frac = Math.min(kmh / (active.type === 'bike' ? 150 : 120), 1)
+        this.dom.value.setAttribute('stroke-dasharray', `${C * ARC * frac} ${C}`)
+        this.dom.value.style.opacity = frac > 0.01 ? 1 : 0
+        const rpmFrac = Math.min(vp.rpm / (vp.cfg.redline + 300), 1)
+        this.dom.rpm.setAttribute('stroke-dasharray', `${(C - 2 * Math.PI * 11) * ARC * rpmFrac} ${C}`)
+        this.dom.rpm.classList.toggle('red', vp.rpm > vp.cfg.upRpm)
+        this.dom.gear.textContent = vp.gear === -1 ? 'R' : Math.abs(vp.speed) < 0.3 && vp.throttle < 0.05 ? 'N' : vp.gear
+        this.dom.boost.classList.toggle('on', vp.boosting)
+      }
     }
-    this.dom.best.textContent = formatTime(c.best)
-    this.dom.last.textContent = formatTime(c.lastLap)
-    this.dom.dots.forEach((d, i) => {
-      d.classList.toggle('on', c.running && i < c.next)
-      d.classList.toggle('next', c.running && i === c.next)
-    })
+    // activity panel
+    const a = game.activities?.current
+    this.dom.act.classList.toggle('hidden', !a)
+    if (a) {
+      this.dom.actName.textContent = ACTIVITY_INFO[a.id].name
+      this.dom.actGoal.textContent = a.label
+      this.dom.actStep.textContent = a.id === 'rally' ? `${a.next}/${a.total}` : `${Math.min(a.step, a.total)}/${a.total}`
+      if (a.id === 'rally') {
+        this.dom.actTime.textContent = formatTime(a.t)
+        this.dom.actBar.style.width = `${(a.next / a.total) * 100}%`
+      } else {
+        const tl = Math.max(0, a.timer)
+        this.dom.actTime.textContent = `${Math.floor(tl / 60)}:${String(Math.floor(tl % 60)).padStart(2, '0')}`
+        this.dom.actBar.style.width = `${(tl / a.limit) * 100}%`
+        this.dom.actTime.classList.toggle('late', tl < 10)
+      }
+      this.dom.actCoins.textContent = a.coins
+    }
+    // contextual hint
+    const mode = active ? active.type : 'foot'
+    if (mode !== this.hintMode) {
+      this.hintMode = mode
+      const H = {
+        car: '<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive</span><span><kbd>Space</kbd> drift</span><span><kbd>Shift</kbd> boost</span><span><kbd>F</kbd> get out</span><span><kbd>C</kbd> camera</span><span><kbd>H</kbd> horn</span>',
+        bike: '<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> ride</span><span><kbd>Shift</kbd> boost</span><span><kbd>F</kbd> get off</span><span><kbd>C</kbd> camera</span>',
+        heli: '<span><kbd>I</kbd> engine</span><span><kbd>Space</kbd>/<kbd>Shift</kbd> up / down</span><span><kbd>W</kbd><kbd>S</kbd> pitch</span><span><kbd>A</kbd><kbd>D</kbd> turn</span><span><kbd>Q</kbd><kbd>E</kbd> strafe</span><span><kbd>F</kbd> get out</span>',
+        foot: '<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</span><span><kbd>Shift</kbd> run</span><span><kbd>Space</kbd> jump</span><span><kbd>F</kbd> enter vehicle</span><span>mouse to look</span><span><kbd>C</kbd> camera</span>',
+      }
+      this.hint.innerHTML = H[mode]
+      this.hint.classList.remove('dim')
+      clearTimeout(this.hintTimer)
+      this.hintTimer = setTimeout(() => this.hint.classList.add('dim'), 9000)
+    }
+  }
+
+  setCoins(n, pulse = false) {
+    this.dom.coinsN.textContent = n
+    if (pulse) {
+      this.dom.coins.classList.remove('pulse')
+      void this.dom.coins.offsetWidth
+      this.dom.coins.classList.add('pulse')
+    }
+  }
+
+  prompt(key, text) {
+    if (!key) return this.dom.prompt.classList.add('hidden')
+    this.dom.prompt.classList.remove('hidden')
+    this.dom.promptKey.textContent = key
+    this.dom.promptText.textContent = text
+  }
+
+  countdown(n) {
+    const el = this.dom.countdown
+    el.textContent = n > 0 ? n : 'GO!'
+    el.classList.remove('hidden', 'pop')
+    void el.offsetWidth
+    el.classList.add('pop')
+    clearTimeout(this.cdTimer)
+    this.cdTimer = setTimeout(() => el.classList.add('hidden'), n > 0 ? 900 : 700)
+  }
+
+  openActivities(acts) {
+    if (this.modal) return this.closeSettings()
+    const wrap = document.createElement('div')
+    wrap.className = 'modal-wrap'
+    const fmtBest = (id) => {
+      const b = acts.best[id]
+      if (!b) return 'No record yet'
+      return id === 'rally' ? `Best ${formatTime(b)}` : `Best ${b} coins`
+    }
+    wrap.innerHTML = `
+      <div class="panel modal" role="dialog" aria-label="Activities">
+        <h2>Activities <button class="icon-btn" data-close aria-label="Close">${ICONS.close}</button></h2>
+        <div class="coin-total">${ICONS.coin}<b>${acts.coins}</b> coins earned</div>
+        ${Object.entries(ACTIVITY_INFO).map(([id, info]) => `
+          <div class="act-card" style="--c:${info.color}">
+            <div class="act-top"><b>${info.name}</b><span>${fmtBest(id)}</span></div>
+            <p>${info.blurb}</p>
+            <button class="chip" data-route="${id}">Show the way</button>
+          </div>`).join('')}
+        <p class="note">Drive into a glowing marker and press <kbd>G</kbd> to start. Press <kbd>G</kbd> again to quit an activity.</p>
+      </div>`
+    document.body.appendChild(wrap)
+    this.modal = wrap
+    wrap.addEventListener('click', (e) => { if (e.target === wrap) this.closeSettings() })
+    wrap.querySelector('[data-close]').addEventListener('click', () => this.closeSettings())
+    wrap.querySelectorAll('[data-route]').forEach((b) => b.addEventListener('click', () => {
+      this.fire('route', b.dataset.route)
+      this.closeSettings()
+    }))
   }
 
   // ------------------------------------------------------------ Settings
@@ -302,18 +398,24 @@ export class UI {
         <h3>Progress</h3>
         <div class="toggles">
           <button class="chip" data-t="reset-embers">${ICONS.reset} Reset embers</button>
-          <button class="chip" data-t="reset-best">${ICONS.reset} Reset best lap</button>
+          <button class="chip" data-t="reset-best">${ICONS.reset} Reset activity records</button>
         </div>
         ${this.isTouch ? '' : `<h3>Controls</h3>
         <div class="keys">
-          <span><kbd>W</kbd><kbd>S</kbd></span><span>Throttle / brake &amp; reverse</span>
+          <span><kbd>W</kbd><kbd>S</kbd></span><span>Throttle / brake &amp; reverse (walk on foot)</span>
           <span><kbd>A</kbd><kbd>D</kbd></span><span>Steer</span>
-          <span><kbd>Space</kbd></span><span>Handbrake drift</span>
-          <span><kbd>Shift</kbd></span><span>Boost</span>
+          <span><kbd>Space</kbd></span><span>Handbrake drift · jump · helicopter up</span>
+          <span><kbd>Shift</kbd></span><span>Boost · run · helicopter down</span>
+          <span><kbd>F</kbd></span><span>Get in / out of the buggy, bike or helicopter</span>
+          <span><kbd>I</kbd></span><span>Helicopter engine start / stop</span>
+          <span><kbd>Q</kbd><kbd>E</kbd></span><span>Helicopter strafe</span>
+          <span><kbd>G</kbd></span><span>Start / quit an activity at a marker</span>
+          <span><kbd>J</kbd></span><span>Activities list</span>
+          <span>Map</span><span>Click the minimap to enlarge</span>
           <span><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd></span><span>Autumn / Spring / Monsoon</span>
           <span><kbd>N</kbd></span><span>Day / night</span>
           <span><kbd>C</kbd></span><span>Camera</span>
-          <span><kbd>R</kbd></span><span>Reset car</span>
+          <span><kbd>R</kbd></span><span>Reset vehicle</span>
           <span><kbd>M</kbd></span><span>Music on / off</span>
           <span><kbd>H</kbd></span><span>Horn</span>
         </div>`}

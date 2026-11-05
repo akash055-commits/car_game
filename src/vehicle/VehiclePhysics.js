@@ -117,6 +117,7 @@ export class VehiclePhysics {
     this.airTime = 0
     this.landing = 0 // impact strength on landing (consumed by fx)
     this.slip = [0, 0, 0, 0]
+    this.sideSlip = [0, 0, 0, 0] // lateral-only slip (drives the tyre squeal)
     this.wheelSurface = ['dirt', 'dirt', 'dirt', 'dirt']
     this.gripScale = 1
     this.inWater = 0
@@ -289,6 +290,7 @@ export class VehiclePhysics {
       const side = Math.abs(c.wheelSideImpulse(i) || 0)
       const fwdImp = Math.abs(c.wheelForwardImpulse(i) || 0)
       this.slip[i] = c.wheelIsInContact(i) ? clamp(side / 70 + (this.handbrake && !this.wheelPositions[i].front ? absSpeed / 25 : 0) + (fwdImp > 80 ? 0.4 : 0), 0, 1) : 0
+      this.sideSlip[i] = c.wheelIsInContact(i) ? clamp(side / 70 + (this.handbrake && !this.wheelPositions[i].front ? absSpeed / 30 : 0), 0, 1) : 0
     }
     if (grounded === 0) this.airTime += dt
     else {
