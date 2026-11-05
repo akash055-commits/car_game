@@ -100,6 +100,7 @@ const html = /* html */`
     <button class="btn" data-action="back">BACK</button>
   </div>
   <div class="menu-footer">Press a mode to start · Gamepad & touch supported</div>
+  <a class="back-home hidden" id="back-home" href="/">← Back to portfolio</a>
 </div>
 
 <div id="pause" class="screen dim hidden">
@@ -141,6 +142,7 @@ export class UI {
     this.bindMenu();
     this.isTouch = window.matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
     if (!this.isTouch) this.$('touch').remove();
+    if (import.meta.env.BASE_URL !== '/') this.$('back-home').classList.remove('hidden');
     this.speedShown = 0;
   }
 

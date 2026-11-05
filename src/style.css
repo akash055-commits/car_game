@@ -147,6 +147,9 @@ kbd { display: inline-block; min-width: 26px; padding: 2px 7px; margin-right: 4p
 .hint { position: absolute; bottom: 16px; left: 16px; max-width: min(560px, 55vw); font-size: 15px; font-weight: 600; color: rgba(255, 255, 255, 0.85); background: rgba(0, 0, 0, 0.35); padding: 8px 14px; border-radius: 12px; opacity: 0; }
 .hint.fade { animation: hintFade 9s ease forwards; }
 
+.back-home { position: absolute; top: 18px; right: 20px; padding: 9px 16px; border-radius: 999px; background: rgba(12, 18, 30, 0.55); border: 1px solid var(--glass-border); backdrop-filter: blur(10px); color: var(--text); text-decoration: none; font-weight: 700; font-size: 15px; letter-spacing: 0.05em; transition: transform 0.25s var(--bounce), border-color 0.2s; }
+.back-home:hover { transform: translateX(-3px) scale(1.04); border-color: var(--accent); }
+
 /* ---------- results ---------- */
 .record { text-align: center; font-family: var(--display); font-weight: 900; color: #ffd740; letter-spacing: 0.15em; animation: pulse 1s ease-in-out infinite; }
 .res-total { display: flex; justify-content: space-between; align-items: baseline; font-size: 15px; letter-spacing: 0.2em; color: var(--muted); font-weight: 700; padding: 4px 6px; }

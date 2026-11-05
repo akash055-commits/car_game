@@ -22,7 +22,7 @@ export const TIME_PRESETS = {
   sunset: {
     elevation: 5, azimuth: 255, turbidity: 9, rayleigh: 2.6, mie: 0.006, mieG: 0.88, clouds: 0.55,
     sun: 2.6, sunColor: 0xffa565, hemi: 0.55, hemiSky: 0xffb48e, hemiGround: 0x3b2a2c,
-    fog: 0xdc9c7e, fogDensity: 0.0021, exposure: 0.5, env: 0.65, lights: true, stars: false,
+    fog: 0xdc9c7e, fogDensity: 0.0021, exposure: 0.42, env: 0.65, lights: true, stars: false,
   },
   night: {
     elevation: -8, azimuth: 200, turbidity: 2, rayleigh: 0.4, mie: 0.002, mieG: 0.7, clouds: 0.25,
@@ -198,7 +198,7 @@ export class World {
     this.composer.setSize(w, h);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
     if (this.quality.bloom) {
-      this.bloom = new UnrealBloomPass(new THREE.Vector2(w / 2, h / 2), 0.45, 0.4, 1.5);
+      this.bloom = new UnrealBloomPass(new THREE.Vector2(w / 2, h / 2), 0.35, 0.4, 1.6);
       this.composer.addPass(this.bloom);
     } else this.bloom = null;
     this.speedPass = new ShaderPass(SpeedFXShader);
