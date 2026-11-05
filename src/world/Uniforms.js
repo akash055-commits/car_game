@@ -48,6 +48,25 @@ export const U = {
   uFogColor: c('#f2b98a'),
 }
 
+// Dither away geometry that sits between the camera and the car so it never hides
+export const occlusionGLSL = /* glsl */ `
+float carOcclusion(vec3 wp, vec3 carPos) {
+  vec3 target = carPos + vec3(0.0, 0.6, 0.0);
+  vec3 seg = target - cameraPosition;
+  float L = length(seg);
+  vec3 dir = seg / L;
+  float t = dot(wp - cameraPosition, dir);
+  float d = length(wp - (cameraPosition + dir * clamp(t, 0.0, L)));
+  return (1.0 - smoothstep(2.2, 3.8, d)) * step(t, L - 1.8) * step(0.0, t);
+}
+float bayer4(vec2 p) {
+  vec2 q = mod(floor(p), 4.0);
+  int i = int(q.x) + int(q.y) * 4;
+  float m[16] = float[16](0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
+  return (m[i] + 0.5) / 16.0;
+}
+`
+
 // Common GLSL noise helpers
 export const noiseGLSL = /* glsl */ `
 float hash12(vec2 p) {

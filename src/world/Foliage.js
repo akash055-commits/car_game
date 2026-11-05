@@ -2,7 +2,7 @@
 // giving soft, fluffy crowns. Colours come from the season palette per tree, so
 // switching season recolours every tree without touching geometry.
 import * as THREE from 'three'
-import { U } from './Uniforms.js'
+import { U, occlusionGLSL } from './Uniforms.js'
 import { makeRandom } from '../core/math.js'
 
 export function createLeafTexture() {
@@ -41,6 +41,7 @@ function cardMaterial(leafTex, { pushFromCar = false } = {}) {
       uTime: U.uTime, uWindDir: U.uWindDir, uWindStrength: U.uWindStrength, uCarPos: U.uCarPos,
       uLeafA: U.uLeafA, uLeafB: U.uLeafB, uLeafC: U.uLeafC, uWet: U.uWet,
     })
+    shader.uniforms.uCarPos = U.uCarPos
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', `#include <common>
 attribute vec4 aCenter; // crown centre xyz, crown radius
@@ -50,6 +51,7 @@ uniform vec2 uWindDir;
 uniform vec3 uCarPos;
 varying vec2 vRand;
 varying float vAO;
+varying vec3 vWP;
 `)
       .replace('#include <defaultnormal_vertex>', `#include <defaultnormal_vertex>
 vec3 cardWorld = (instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
@@ -66,6 +68,7 @@ wPos.xz += away / max(dd, 0.001) * smoothstep(2.2, 0.5, dd) * 0.6;
 wPos.y -= smoothstep(2.2, 0.5, dd) * 0.25;` : ''}
 vec4 mvPosition = viewMatrix * modelMatrix * wPos;
 gl_Position = projectionMatrix * mvPosition;
+vWP = wPos.xyz;
 vRand = aRand;
 float up = dot(normalize(cardWorld - aCenter.xyz), vec3(0.0, 1.0, 0.0));
 float outer = length(cardWorld - aCenter.xyz) / aCenter.w;
@@ -73,11 +76,15 @@ vAO = mix(0.5, 1.0, smoothstep(-0.9, 0.7, up)) * mix(0.75, 1.0, smoothstep(0.3, 
 `)
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>
-uniform vec3 uLeafA, uLeafB, uLeafC;
+uniform vec3 uLeafA, uLeafB, uLeafC, uCarPos;
 uniform float uWet;
 varying vec2 vRand;
 varying float vAO;
+varying vec3 vWP;
+${occlusionGLSL}
 `)
+      .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
+if (bayer4(gl_FragCoord.xy) < carOcclusion(vWP, uCarPos) * 0.9) discard;`)
       .replace('#include <normal_fragment_begin>', '#include <normal_fragment_begin>\nnormal = normalize(vNormal);')
       .replace('#include <color_fragment>', `#include <color_fragment>
 float r = clamp(vRand.x + (vRand.y - 0.5) * 0.28, 0.0, 1.0);
@@ -93,8 +100,13 @@ function trunkMaterial() {
   mat.onBeforeCompile = (shader) => {
     shader.uniforms.uTrunk = U.uTrunk
     shader.uniforms.uWet = U.uWet
+    shader.uniforms.uCarPos = U.uCarPos
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vWP;')
+      .replace('#include <project_vertex>', '#include <project_vertex>\nvWP = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;')
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform vec3 uTrunk;\nuniform float uWet;')
+      .replace('#include <common>', `#include <common>\nuniform vec3 uTrunk, uCarPos;\nuniform float uWet;\nvarying vec3 vWP;\n${occlusionGLSL}`)
+      .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\nif (bayer4(gl_FragCoord.xy) < carOcclusion(vWP, uCarPos) * 0.9) discard;')
       .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb = uTrunk * (1.0 - uWet * 0.3);')
   }
   return mat

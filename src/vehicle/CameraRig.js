@@ -64,8 +64,9 @@ export class CameraRig {
     _fwd.set(0, 0, 1).applyQuaternion(carQuat)
     const cam = this.camera
     // Look ahead in the direction of travel
-    _v.set(carVel.x, 0, carVel.z).multiplyScalar(0.32)
-    if (_v.length() > 7) _v.setLength(7)
+    const portrait = cam.aspect < 1
+    _v.set(carVel.x, 0, carVel.z).multiplyScalar(portrait ? 0.14 : 0.32)
+    if (_v.length() > (portrait ? 3 : 7)) _v.setLength(portrait ? 3 : 7)
     this.lookAhead.x = damp(this.lookAhead.x, _v.x, 2.5, dt)
     this.lookAhead.z = damp(this.lookAhead.z, _v.z, 2.5, dt)
     const target = _v.copy(carPos).add(this.lookAhead)
@@ -120,8 +121,12 @@ export class CameraRig {
       cam.position.z += Math.sin(t * 1.9 + 2) * s
       this.shake = damp(this.shake, 0, 5, dt)
     }
-    if (Math.abs(cam.fov - this.fov) > 0.01) {
-      cam.fov = this.fov
+    // Tall (portrait) screens: widen the vertical FOV so the horizontal view stays usable
+    const minHalfH = (this.mode === 'diorama' ? 13.5 : 24) * (Math.PI / 180)
+    const aspectFov = (2 * Math.atan(Math.tan(minHalfH) / cam.aspect) * 180) / Math.PI
+    const fov = Math.max(this.fov, aspectFov)
+    if (Math.abs(cam.fov - fov) > 0.01) {
+      cam.fov = fov
       cam.updateProjectionMatrix()
     }
   }

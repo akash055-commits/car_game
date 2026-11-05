@@ -9,6 +9,7 @@ import { Physics } from './physics/Physics.js'
 import { Renderer } from './render/Renderer.js'
 import { Layout, WORLD } from './world/Layout.js'
 import { U } from './world/Uniforms.js'
+
 import { Terrain, buildTerrainPhysics } from './world/Terrain.js'
 import { Road } from './world/Road.js'
 import { Water } from './world/Water.js'
@@ -32,6 +33,7 @@ const nextFrame = () => new Promise((r) => requestAnimationFrame(() => setTimeou
 export class Game {
   constructor(container) {
     this.container = container
+    this.uniforms = U
     this.started = false
     this.listeners = {}
   }
@@ -133,7 +135,12 @@ export class Game {
       const isCar = t1?.kind === 'car' || t2?.kind === 'car'
       const other = t1?.kind === 'car' ? t2 : t1
       const strength = clamp((force - 2000) / 60000, 0, 1)
-      if (isCar && strength > 0.02) this.rig.addShake(strength * 0.9)
+      const now = performance.now()
+      if (isCar && strength > 0.02 && (now - (this.lastShake || 0) > 280 || strength > (this.lastShakeStrength || 0) * 1.5)) {
+        this.rig.addShake(strength * 0.9)
+        this.lastShake = now
+        this.lastShakeStrength = strength
+      }
       this.emit('impact', { force, strength: isCar ? strength : clamp(force / 8000, 0, 1), material: other?.material || 'ground', withCar: isCar, kind: other?.kind })
     }
     this.circuit.on('checkpoint', (n, t) => this.emit('checkpoint', n, t))
@@ -224,7 +231,6 @@ export class Game {
     this.visual.update(dt, this.carPos, this.carQuat)
     this.rig.update(dt, this.carPos, this.carQuat, lv, vp.speed, vp.boosting)
     this.effects.update(dt, vp, this.visual)
-    vp.landing = 0
     U.uCarPos.value.copy(this.carPos)
     U.uCarVel.value.set(lv.x, lv.y, lv.z)
     U.uFocus.value.copy(this.rig.focus)
@@ -274,6 +280,7 @@ export class Game {
 
     this.updateEnvironment()
     this.emit('frame', dt)
+    vp.landing = 0
   }
 
   updateEnvironment(force = false) {
