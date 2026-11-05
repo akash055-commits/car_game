@@ -1,38 +1,30 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 
+export const FIXED_DT = 1 / 60;
+
 export class Physics {
   constructor() {
     this.world = null;
+    this.eventQueue = null;
+    this.collisionHandlers = [];
   }
 
   async init() {
     await RAPIER.init();
     this.world = new RAPIER.World({ x: 0.0, y: -9.81, z: 0.0 });
+    this.world.timestep = FIXED_DT;
+    this.eventQueue = new RAPIER.EventQueue(true);
     return this.world;
   }
 
-  step() {
-    if (this.world) {
-      this.world.step();
-    }
+  onCollision(fn) {
+    this.collisionHandlers.push(fn);
   }
 
-  /**
-   * Returns the collision events from the current physics step.
-   * In Rapier WASM, events are retrieved via the world's event queue.
-   */
-  getContactEvents() {
-    if (!this.world) return [];
-    // In Rapier WASM, contact events are often accessed via getEvents()
-    // or by checking the event queue.
-    // Using a safe check to see if the method exists.
-    if (typeof this.world.getEvents === 'function') {
-        return this.world.getEvents();
-    }
-    // Fallback for different Rapier versions
-    if (typeof this.world.contactEvents === 'function') {
-        return this.world.contactEvents();
-    }
-    return [];
+  step() {
+    this.world.step(this.eventQueue);
+    this.eventQueue.drainCollisionEvents((h1, h2, started) => {
+      for (const fn of this.collisionHandlers) fn(h1, h2, started);
+    });
   }
 }
