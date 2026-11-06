@@ -200,7 +200,7 @@ export class CameraRig {
       const shoulder = pivot.clone().add(side)
       desired = this.collide(shoulder, shoulder.clone().add(back), target.body)
       lookAt = shoulder.clone().add(new THREE.Vector3(Math.sin(this.yaw), -Math.sin(this.pitch) * 0.6 + 0.05, Math.cos(this.yaw)).multiplyScalar(4))
-      fov = 55 + clamp(speed / 6, 0, 1) * 6
+      fov = 55 + clamp(speed / 6, 0, 1) * 5 + (target.boosting ? 6 : 0)
       stiff = 22
     } else {
       // chase: behind the vehicle, mouse can swing it around temporarily

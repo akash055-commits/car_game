@@ -1,12 +1,12 @@
 // Renderer + post-processing chain:
-// Render (MSAA, HDR) -> Bloom (emissives only) -> Output (ACES + sRGB) -> Tilt-shift H/V -> Grade
+// Render (MSAA, HDR) -> NaN guard -> Bloom (emissives only) -> Output (ACES + sRGB) -> Tilt-shift H/V -> Grade
 import * as THREE from 'three'
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js'
-import { TiltShiftShader, GradeShader } from './Shaders.js'
+import { TiltShiftShader, GradeShader, SanitizeShader } from './Shaders.js'
 
 export class Renderer {
   constructor(container, quality) {
@@ -32,6 +32,9 @@ export class Renderer {
     })
     this.composer = new EffectComposer(r, target)
     this.composer.addPass(new RenderPass(this.scene, this.camera))
+    // guard against NaN / Inf pixels before anything blurs them (see SanitizeShader)
+    this.sanitize = new ShaderPass(SanitizeShader)
+    this.composer.addPass(this.sanitize)
 
     this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x / 2, size.y / 2), 0.55, 0.55, 1.0)
     this.bloom.enabled = quality.bloom

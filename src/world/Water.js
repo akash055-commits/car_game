@@ -58,7 +58,7 @@ export class Water {
           vec3 H = normalize(V + normalize(uSunDir));
           float spec = pow(max(dot(N, H), 0.0), 120.0) * (1.0 - uRain) * step(0.0, uSunDir.y);
           col += uSunColor * spec * 1.6;
-          float fres = pow(1.0 - max(V.y, 0.0), 4.0);
+          float fres = pow(clamp(1.0 - V.y, 0.0, 1.0), 4.0);
           col = mix(col, uSkyHorizon, fres * 0.35);
           // Rain rings
           if (uRain > 0.01) {

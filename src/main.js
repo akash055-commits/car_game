@@ -159,7 +159,7 @@ function wire() {
       ui.toast('Engine starting… wait for full rotor speed', { duration: 2600 })
     } else ui.toast('Engine shutting down', { duration: 1800 })
   })
-  game.on('footstep', (k, surf) => audio.sfx?.footstep(surf, k > 0.6))
+  game.on('footstep', (k, surf) => audio.sfx?.footstep(surf, k > 0.6, k >= 1))
   game.on('voice', (kind, x, z) => audio.sfx?.voice(kind, dist(x, z)))
   game.on('hammer', (x, z) => audio.sfx?.hammer(dist(x, z)))
   game.on('honk', (x, z) => audio.sfx?.honk(dist(x, z)))

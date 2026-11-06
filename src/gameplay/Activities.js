@@ -27,7 +27,7 @@ function beamMaterial(color) {
     uniforms: { uTime: U.uTime, uColor: { value: new THREE.Color(color) } },
     vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
     fragmentShader: `varying vec2 vUv; uniform float uTime; uniform vec3 uColor;
-      void main(){ float a = pow(1.0 - vUv.y, 1.6) * (0.55 + 0.45 * sin(uTime * 4.0 - vUv.y * 12.0)); gl_FragColor = vec4(uColor * a * 0.9, 1.0); }`,
+      void main(){ float a = pow(clamp(1.0 - vUv.y, 0.0, 1.0), 1.6) * (0.55 + 0.45 * sin(uTime * 4.0 - vUv.y * 12.0)); gl_FragColor = vec4(uColor * a * 0.9, 1.0); }`,
   })
 }
 

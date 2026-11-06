@@ -192,9 +192,9 @@ export class Sfx {
     return 1 / (1 + (d / ref) * (d / ref))
   }
 
-  footstep(surface = 'road', run = false) {
+  footstep(surface = 'road', run = false, sprint = false) {
     const t = this.ctx.currentTime + 0.002
-    const g = run ? 0.09 : 0.06
+    const g = sprint ? 0.115 : run ? 0.09 : 0.06
     if (surface === 'grass' || surface === 'dirt') {
       this.noiseBurst({ t, dur: 0.09, filter: 'bandpass', freq: 1400 + Math.random() * 500, q: 0.7, gain: g * 0.8, buffer: 'pink' })
     } else if (surface === 'wood') {

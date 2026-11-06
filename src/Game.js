@@ -460,7 +460,7 @@ export class Game {
       lv = this.player.vel
       this.carPos.copy(this.player.pos)
       this.carQuat.setFromAxisAngle(new THREE.Vector3(0, 1, 0), this.player.heading)
-      this.rig.update(dt, { pos: this.player.pos, quat: this.carQuat, vel: lv, speed: this.player.speed, boosting: false, body: this.player.body, heading: this.player.heading })
+      this.rig.update(dt, { pos: this.player.pos, quat: this.carQuat, vel: lv, speed: this.player.speed, boosting: this.player.sprinting && this.player.speed > 5, body: this.player.body, heading: this.player.heading })
     }
     this.effects.update(dt, active && active.type !== 'heli' ? active.phys : null, active?.visual, active?.type === 'heli' ? active.phys : null)
     U.uCarPos.value.copy(this.carPos)

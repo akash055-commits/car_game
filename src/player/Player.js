@@ -7,7 +7,9 @@ import { makeCharacter } from '../characters/Rig.js'
 import { makeRandom, damp, angleDelta, clamp } from '../core/math.js'
 
 const WALK = 2.0
-const RUN = 5.6
+const RUN = 4.6 // stick pushed fully on touch, or Shift held while out of breath
+const SPRINT = 7.4 // hold Shift (SPRINT button on touch)
+const SPRINT_TIME = 9 // seconds of sprint on a full stamina bar
 
 export class Player {
   constructor(physics, crowd, layout, spawn) {
@@ -42,6 +44,9 @@ export class Player {
     this.pos = new THREE.Vector3(spawn.x, spawn.y, spawn.z)
     this.stepAcc = 0
     this.onStep = null
+    this.stamina = 1
+    this.tired = false // out of breath: no sprint until stamina recovers a bit
+    this.sprinting = false
   }
 
   get position() {
@@ -60,7 +65,7 @@ export class Player {
     this.vy = 0
   }
 
-  // input: { x: -1..1 strafe (right +), y: -1..1 forward, sprint, jump }, camYaw = camera heading
+  // input: { x: -1..1 strafe (right +), y: -1..1 forward, sprint, run, jump }, camYaw = camera heading
   updateFoot(dt, input, camYaw) {
     const c = this.char
     // movement relative to the camera
@@ -72,8 +77,18 @@ export class Player {
     const ml = Math.hypot(mx, mz) || 1
     mx /= ml
     mz /= ml
-    const target = len > 0.05 ? (input.sprint ? RUN : WALK) * len : 0
-    this.speed = damp(this.speed, target, target > this.speed ? 8 : 12, dt)
+    // Gait + stamina: sprint drains the bar; when it's empty you can only run until it refills
+    const moving = len > 0.05
+    const wantSprint = input.sprint && moving
+    if (wantSprint && !this.tired) {
+      this.stamina -= dt / SPRINT_TIME
+      if (this.stamina <= 0) { this.stamina = 0; this.tired = true }
+    } else this.stamina = Math.min(1, this.stamina + dt / (moving ? 6 : 3.5))
+    if (this.tired && this.stamina > 0.35) this.tired = false
+    this.sprinting = wantSprint && !this.tired
+    const gait = this.sprinting ? SPRINT : input.sprint || input.run ? RUN : WALK
+    const target = moving ? gait * (input.run || input.sprint ? Math.max(len, 0.85) : len) : 0
+    this.speed = damp(this.speed, target, target > this.speed ? (this.sprinting ? 5 : 8) : 12, dt)
     if (len > 0.05) {
       const want = Math.atan2(mx, mz)
       this.heading += angleDelta(this.heading, want) * Math.min(1, dt * 12)
@@ -111,15 +126,17 @@ export class Player {
     c.heading = this.heading
     c.walk = damp(c.walk, actual > 0.2 && actual < 3.6 ? 1 : actual >= 3.6 ? 0.2 : 0, 10, dt)
     c.run = damp(c.run, actual >= 3.6 ? 1 : 0, 10, dt)
-    c.walkPhase += dt * actual * (c.run > 0.5 ? 3.0 : 4.4)
+    c.sprint = damp(c.sprint, this.sprinting && actual > 5.6 ? 1 : 0, 6, dt)
+    // cadence: ~2.8 steps/s walking, ~3.4 running, ~4.5 sprinting
+    const prevPhase = c.walkPhase
+    c.walkPhase += dt * actual * (c.run > 0.5 ? 2.35 - c.sprint * 0.45 : 4.4)
     c.air = damp(c.air, this.grounded ? 0 : 1, 10, dt)
     c.drive = c.ride = c.sit = 0
     c.visible = true
     if (!wasGrounded && this.grounded && this.onStep) this.onStep(1)
     // footsteps
     if (this.grounded && actual > 0.4) {
-      const prev = Math.floor((c.walkPhase - dt * actual * 4.4) / Math.PI)
-      if (Math.floor(c.walkPhase / Math.PI) !== prev && this.onStep) this.onStep(c.run > 0.5 ? 0.8 : 0.45)
+      if (Math.floor(c.walkPhase / Math.PI) !== Math.floor(prevPhase / Math.PI) && this.onStep) this.onStep(c.sprint > 0.5 ? 1 : c.run > 0.5 ? 0.8 : 0.45)
     }
   }
 

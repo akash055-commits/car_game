@@ -75,7 +75,7 @@ export class UI {
           ${this.isTouch
             ? '<span>Joystick to drive &amp; walk</span><span>Tap the prompt to get in / out</span><span>Drag to look around</span>'
             : `<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive / walk</span>
-               <span><kbd>F</kbd> get in / out</span><span><kbd>Space</kbd> drift / jump</span><span><kbd>Shift</kbd> boost / run</span>
+               <span><kbd>F</kbd> get in / out</span><span><kbd>Space</kbd> drift / jump</span><span><kbd>Shift</kbd> boost / sprint</span>
                <span><kbd>J</kbd> activities</span><span><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> seasons</span><span><kbd>N</kbd> night</span>`}
         </div>
         <div class="credits">Best with sound on · Music: “Sudo”, “Boy”, “Baguira” (CC0) via Bruno Simon</div>
@@ -139,6 +139,7 @@ export class UI {
       </div>
       <div class="panel prompt hidden"><kbd class="p-key">F</kbd><span class="p-text">Drive</span></div>
       <div class="countdown hidden"></div>
+      <div class="panel stamina off" title="Stamina"><i></i></div>
       <div class="toolbar">
         <div class="panel group seasons">
           <button class="icon-btn" data-season="autumn" data-tip="Autumn (1)" aria-label="Autumn">${ICONS.autumn}</button>
@@ -175,7 +176,7 @@ export class UI {
       act: this.el(hud, '.activity'), actName: this.el(hud, '.act-name'), actStep: this.el(hud, '.act-step'), actGoal: this.el(hud, '.act-goal'),
       actTime: this.el(hud, '.act-time'), actBar: this.el(hud, '.act-bar i'), actCoins: this.el(hud, '.act-coins'),
       coins: this.el(hud, '.coins'), coinsN: this.el(hud, '.coins .n'), prompt: this.el(hud, '.prompt'), promptKey: this.el(hud, '.p-key'), promptText: this.el(hud, '.p-text'),
-      countdown: this.el(hud, '.countdown'), unit: this.el(hud, '.unit'),
+      countdown: this.el(hud, '.countdown'), unit: this.el(hud, '.unit'), stamina: this.el(hud, '.stamina'), staminaBar: this.el(hud, '.stamina i'),
       embers: this.el(hud, '.embers'), embersN: this.el(hud, '.embers .n'), embersOf: this.el(hud, '.embers .of'),
       kmh: this.el(hud, '.kmh'), gear: this.el(hud, '.gear'), value: this.el(hud, '.value'), rpm: this.el(hud, '.rpm'), boost: this.el(hud, '.boost'),
       np: this.el(hud, '.now-playing'), npTrack: this.el(hud, '.now-playing .track'), toasts: this.el(hud, '.toasts'),
@@ -272,6 +273,14 @@ export class UI {
         this.dom.boost.classList.toggle('on', vp.boosting)
       }
     }
+    // stamina bar: on foot, while sprinting or refilling
+    const pl = game.player
+    const showStamina = !active && pl && (pl.sprinting || pl.stamina < 0.995)
+    this.dom.stamina.classList.toggle('off', !showStamina)
+    if (pl) {
+      this.dom.staminaBar.style.transform = `scaleX(${Math.max(0.02, pl.stamina).toFixed(3)})`
+      this.dom.stamina.classList.toggle('tired', pl.tired)
+    }
     // activity panel
     const a = game.activities?.current
     this.dom.act.classList.toggle('hidden', !a)
@@ -298,7 +307,7 @@ export class UI {
         car: '<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive</span><span><kbd>Space</kbd> drift</span><span><kbd>Shift</kbd> boost</span><span><kbd>F</kbd> get out</span><span><kbd>C</kbd> camera</span><span><kbd>H</kbd> horn</span>',
         bike: '<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> ride</span><span><kbd>Shift</kbd> boost</span><span><kbd>F</kbd> get off</span><span><kbd>C</kbd> camera</span>',
         heli: '<span><kbd>I</kbd> engine</span><span><kbd>Space</kbd>/<kbd>Shift</kbd> up / down</span><span><kbd>W</kbd><kbd>S</kbd> pitch</span><span><kbd>A</kbd><kbd>D</kbd> turn</span><span><kbd>Q</kbd><kbd>E</kbd> strafe</span><span><kbd>F</kbd> get out</span>',
-        foot: '<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</span><span><kbd>Shift</kbd> run</span><span><kbd>Space</kbd> jump</span><span><kbd>F</kbd> enter vehicle</span><span>mouse to look</span><span><kbd>C</kbd> camera</span>',
+        foot: '<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</span><span><kbd>Shift</kbd> sprint</span><span><kbd>Space</kbd> jump</span><span><kbd>F</kbd> enter vehicle</span><span>mouse to look</span><span><kbd>C</kbd> camera</span>',
       }
       this.hint.innerHTML = H[mode]
       this.hint.classList.remove('dim')
@@ -405,7 +414,7 @@ export class UI {
           <span><kbd>W</kbd><kbd>S</kbd></span><span>Throttle / brake &amp; reverse (walk on foot)</span>
           <span><kbd>A</kbd><kbd>D</kbd></span><span>Steer</span>
           <span><kbd>Space</kbd></span><span>Handbrake drift · jump · helicopter up</span>
-          <span><kbd>Shift</kbd></span><span>Boost · run · helicopter down</span>
+          <span><kbd>Shift</kbd></span><span>Boost · sprint on foot (watch the stamina bar) · helicopter down</span>
           <span><kbd>F</kbd></span><span>Get in / out of the buggy, bike or helicopter</span>
           <span><kbd>I</kbd></span><span>Helicopter engine start / stop</span>
           <span><kbd>Q</kbd><kbd>E</kbd></span><span>Helicopter strafe</span>

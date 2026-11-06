@@ -157,7 +157,8 @@ export class Particles {
           // billboard around the fall axis
           vec3 axis = normalize(vec3(-slant.x / 21.0, 1.0, -slant.y / 21.0));
           vec3 toCam = normalize(cameraPosition - vec3(wp.x, y, wp.y));
-          vec3 side = normalize(cross(axis, toCam));
+          vec3 cr = cross(axis, toCam);
+          vec3 side = dot(cr, cr) > 1e-8 ? normalize(cr) : vec3(1.0, 0.0, 0.0);
           vec3 world = vec3(wp.x, y, wp.y) + side * position.x + axis * position.y;
           vec4 mvPosition = viewMatrix * vec4(world, 1.0);
           gl_Position = projectionMatrix * mvPosition;
