@@ -378,13 +378,14 @@ export class Combat {
   }
 
   // Shots scare people and make drivers panic (throttled)
-  disturb(p, radius) {
+  disturb(p, radius, owner = 'player') {
     const now = performance.now()
-    if (now - this.lastScare < 400) return
-    this.lastScare = now
+    const key = owner === 'player' ? 'lastScare' : 'lastNpcScare'
+    if (now - (this[key] || 0) < 400) return
+    this[key] = now
     const seen = this.game.people.scare(p.x, p.z, radius, 'gunshot')
     this.game.traffic.panicNear(p.x, p.z, radius)
-    this.emit('disturbance', p, seen)
+    this.emit('disturbance', p, seen, owner)
   }
 
   resolvePunch() {
@@ -491,6 +492,8 @@ export class Combat {
     const downed = g.people.hit(c, dmg, from, kind)
     if (point) g.effects.impactPuff(point, _n.set(from.x - c.x, 0.4, from.z - c.z).normalize(), 'flesh')
     this.emit('hitChar', c, downed, owner, kind)
+    // officers who get shot at fight back harder
+    if (c.officer && owner === 'player') g.wanted?.crime(downed ? 'copDowned' : 'copHit', g.carPos, true)
   }
 
   hitCollider(col, tag, point, d, dmg, owner, normal) {
@@ -507,6 +510,9 @@ export class Combat {
       if (v) this.damageVehicle(v, dmg * 0.5, null, owner)
     } else if (kind === 'plane') {
       g.aviation.damage?.(body, dmg)
+    } else if (kind === 'policeHeli') {
+      g.police?.damageHeli(dmg)
+      if (owner === 'player') g.wanted?.crime('copHit', g.carPos, true)
     } else if (body && body.isDynamic()) {
       body.applyImpulseAtPoint({ x: d.x * dmg * 0.6, y: d.y * dmg * 0.6, z: d.z * dmg * 0.6 }, { x: point.x, y: point.y, z: point.z }, true)
     }
@@ -532,7 +538,7 @@ export class Combat {
     for (let k = 0; k < (w.pellets || 1); k++) this.hitscan(o, d, w.range, w.damage * 0.55, 'npc', k === 0, shooter)
     this.game.effects.muzzle(o, d)
     this.emit('shot', w, o, 'npc')
-    this.disturb(o, 35)
+    this.disturb(o, 35, 'npc')
   }
 
   // ---------------------------------------------------------------- projectiles
@@ -638,6 +644,8 @@ export class Combat {
       return true
     })
     g.construction.blast(p.x, p.y, p.z, radius, size)
+    const ph = g.police?.heli
+    if (ph && ph.pos.distanceTo(p) < radius * 1.6) g.police.damageHeli(damage * 2)
     g.aviation.blast?.(p, radius)
     const seen = g.people.scare(p.x, p.z, 70, 'explosion')
     g.traffic.panicNear(p.x, p.z, 70)

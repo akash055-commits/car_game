@@ -72,6 +72,7 @@ function wire() {
     if (game.quality.isTouch) game.touch = new TouchControls(game.input, game.rig, game.renderer.renderer.domElement)
     minimap = new Minimap(ui.hud, game)
     hud = new CombatHud(ui.hud)
+    window.__hud = hud
     setTimeout(() => ui.toast(`Welcome to Maple Hollow · <em>${SEASONS[game.seasons.current].label}</em>`), 900)
     setTimeout(() => ui.toast('Press <kbd>J</kbd> for activities · <kbd>F</kbd> to get out and walk', { duration: 4200 }), 3600)
   })
@@ -274,10 +275,27 @@ function wire() {
     ui.toast({ health: '+ Health', armor: '+ Body armour', ammo: '+ Ammo', rocket: '+ 3 rockets', nitro: 'Nitro refilled' }[kind], { duration: 1300 })
   })
   game.on('ejected', () => ui.toast('Thrown off the bike!', { duration: 1600 }))
-  game.on('sprayed', (s, v) => {
+  game.on('sprayed', (s, v, lost) => {
     audio.sfx?.whoosh()
-    ui.toast(`<em>Spray & Fix</em>: your ${v.name.toLowerCase()} is good as new`, { duration: 2400 })
+    ui.toast(lost ? 'New paint job: <em>the police lose interest</em>' : `<em>Spray & Fix</em>: your ${v.name.toLowerCase()} is good as new`, { duration: 2600 })
   })
+  // ---------------------------------------------------------------- wanted / police
+  const stars = (n) => '★'.repeat(n) + '☆'.repeat(5 - n)
+  game.wanted.on('level', (n, before) => {
+    audio.sfx?.stinger(false)
+    ui.toast(`Wanted <em>${stars(n)}</em>${before === 0 ? ' · lose the police or hide in a Spray & Fix' : ''}`, { duration: 2600 })
+  })
+  game.wanted.on('cleared', (reason, before) => {
+    if (reason === 'lost') {
+      audio.sfx?.stinger(true)
+      ui.toast('You lost the police', { big: true, duration: 2600 })
+    }
+  })
+  game.wanted.on('spotted', () => ui.toast('Spotted! The police are back on you', { duration: 1600 }))
+  game.police.on('heli', () => ui.toast('A police helicopter is overhead', { duration: 2200 }))
+  game.police.on('heliDown', () => ui.toast('You brought the police helicopter down!', { duration: 2400 }))
+  game.police.on('roadblock', () => ui.toast('<em>Roadblock</em> ahead!', { duration: 2000 }))
+  game.police.on('disembark', (u) => audio.sfx?.voice('halt', dist(u.v.pos.x, u.v.pos.z)))
   game.on('openShop', () => {
     const items = [
       ...WEAPONS.filter((w) => !w.melee).map((w) => ({ id: w.id, name: `${w.icon} ${w.name} ammo`, desc: `+${w.clip * (w.id === 'rocket' ? 3 : 3)} rounds`, price: w.price })),
@@ -369,6 +387,9 @@ function wire() {
       active: game.active,
       heli,
       listener: cam,
+      right,
+      sirens: game.police.sirens(),
+      policeHeli: game.police.heli,
       planes: game.aviation.planes,
       wet: U.uWet.value,
       ambience: {

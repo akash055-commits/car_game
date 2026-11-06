@@ -145,3 +145,48 @@ export class JetNoise {
     this.whineAmp.gain.setTargetAtTime(whine * 0.012, t, 0.4)
   }
 }
+
+// Police siren: a two-tone oscillator pair swept by an LFO ("wail"), positioned with
+// distance attenuation and stereo pan. One voice per nearby police car.
+export class SirenSynth {
+  constructor(ctx, out) {
+    this.ctx = ctx
+    const t = ctx.currentTime
+    this.osc = ctx.createOscillator()
+    this.osc.type = 'square'
+    this.osc.frequency.value = 900
+    this.osc2 = ctx.createOscillator()
+    this.osc2.type = 'triangle'
+    this.osc2.frequency.value = 900
+    this.lfo = ctx.createOscillator()
+    this.lfo.type = 'triangle'
+    this.lfo.frequency.value = 0.42
+    const depth = ctx.createGain()
+    depth.gain.value = 330
+    this.lfo.connect(depth)
+    depth.connect(this.osc.frequency)
+    depth.connect(this.osc2.frequency)
+    const lp = ctx.createBiquadFilter()
+    lp.type = 'lowpass'
+    lp.frequency.value = 2600
+    const hp = ctx.createBiquadFilter()
+    hp.type = 'highpass'
+    hp.frequency.value = 400
+    const mix = ctx.createGain()
+    mix.gain.value = 0.5
+    this.gain = ctx.createGain()
+    this.gain.gain.value = 0
+    this.pan = ctx.createStereoPanner()
+    this.osc.connect(mix)
+    this.osc2.connect(mix)
+    mix.connect(lp).connect(hp).connect(this.gain).connect(this.pan).connect(out)
+    for (const o of [this.osc, this.osc2, this.lfo]) o.start(t)
+  }
+
+  // level 0..1 (already distance-attenuated), pan -1..1, yelp: fast sweep when close
+  update(t, level, pan, yelp) {
+    this.gain.gain.setTargetAtTime(level * 0.06, t, 0.15)
+    this.pan.pan.setTargetAtTime(pan, t, 0.1)
+    this.lfo.frequency.setTargetAtTime(yelp ? 3.2 : 0.42, t, 0.3)
+  }
+}

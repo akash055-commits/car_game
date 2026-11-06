@@ -41,6 +41,9 @@ import { Effects } from './vehicle/Effects.js'
 import { Collectibles } from './gameplay/Collectibles.js'
 import { Combat } from './combat/Combat.js'
 import { Pickups } from './combat/Pickups.js'
+import { Wanted } from './police/Wanted.js'
+import { Police } from './police/Police.js'
+import { FORT } from './world/Regions.js'
 import { Activities } from './gameplay/Activities.js'
 
 const nextFrame = () => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)))
@@ -206,6 +209,8 @@ export class Game {
     this.input.attachMouse(this.renderer.renderer.domElement)
     this.combat = new Combat(this)
     this.pickups = new Pickups(this.scene, this.layout, this.town)
+    this.wanted = new Wanted()
+    this.police = new Police(this)
     // left click shoots (cursor aim) in the overhead view whenever a shot is possible
     this.rig.fireButton = (button) => button === 0 && this.started && (this.combat.canShoot() || this.active?.type === 'tank')
     this.rig.wheelLocked = () => !this.active && this.rig.mode === 'third'
@@ -261,9 +266,18 @@ export class Game {
           } else if (tc && strength > 0.25) this.traffic.damage(tc, strength * 45, null, 'ram')
         }
       }
+      if (isCar && other?.kind === 'car' && strength > 0.1 && this.active) {
+        const h = t1?.kind === 'car' && this.physics.world.getCollider(h1)?.parent() !== this.active.phys.body ? h1 : h2
+        const pv = this.police.vehicleByBody(this.physics.world.getCollider(h)?.parent())
+        if (pv && performance.now() - (this.lastCopHit || 0) > 1500) {
+          this.lastCopHit = performance.now()
+          this.wanted.crime('copHit', this.carPos, true)
+        }
+      }
       this.emit('impact', { force, strength: isCar ? strength : clamp(force / 8000, 0, 1), material: other?.material || 'ground', withCar: isCar, kind: other?.kind })
     }
     this.wireCombat()
+    this.wirePolice()
     this.collectibles.on('collect', (it, n, total) => {
       this.effects.burst(it.pos, 'sparkle', 34)
       this.emit('collect', n, total)
@@ -303,6 +317,58 @@ export class Game {
   start() {
     this.started = true
     this.input.enabled = true
+  }
+
+  // Is a police officer / car within r metres of p?
+  copNear(p, r) {
+    for (const u of this.police.units) {
+      if (u.v && Math.hypot(u.v.pos.x - p.x, u.v.pos.z - p.z) < r) return true
+      for (const c of u.crew) if (!c.down && c.visible && Math.hypot(c.x - p.x, c.z - p.z) < r) return true
+    }
+    return !!this.police.heli && Math.hypot(this.police.heli.pos.x - p.x, this.police.heli.pos.z - p.z) < r * 1.5
+  }
+
+  // Did anybody see it? (townsfolk within 40 m, or the police)
+  witnessed(p) {
+    if (this.copNear(p, 90)) return true
+    for (const c of this.crowd.list) {
+      if (!c.visible || c.isPlayer || c.down || c.drive > 0.5) continue
+      if ((c.x - p.x) ** 2 + (c.z - p.z) ** 2 < 40 * 40) return true
+    }
+    return false
+  }
+
+  wirePolice() {
+    const W = this.wanted
+    const C = this.combat
+    this.police.on('bust', () => this.knockedOut('arrest', true))
+    W.on('cleared', () => this.police.standDown())
+    // gunfire is reported by anyone who sees or hears it (passers-by, drivers, the police)
+    C.on('disturbance', (p, seen, owner) => {
+      if (owner !== 'player') return
+      const drivers = this.traffic.cars.some((c) => c.state === 'drive' && c.pos.distanceTo(p) < 70)
+      W.crime('shots', p, seen > 0 || drivers || this.copNear(p, 110) || Math.random() < 0.4)
+    })
+    C.on('hitChar', (c, downed, owner, kind) => {
+      if (owner !== 'player' || c.officer) return
+      if (downed) W.crime('downed', this.carPos, this.witnessed(this.carPos))
+      else if (kind === 'melee') W.crime('assault', this.carPos, this.witnessed(this.carPos))
+    })
+    C.on('explosion', (p, size, owner) => { if (owner === 'player') W.crime('explosion', p, true) })
+    C.on('vehicleDamaged', (v, amount, owner) => {
+      if (v.police && owner === 'player' && performance.now() - (this.lastCopHit || 0) > 1500) {
+        this.lastCopHit = performance.now()
+        W.crime('copHit', this.carPos, true)
+      }
+    })
+    this.on('downed', (c, kind) => {
+      if (kind !== 'vehicle' || !this.active) return
+      W.crime(c.officer ? 'copDowned' : 'downed', this.carPos, this.witnessed(this.carPos))
+    })
+    this.on('knocked', () => { if (this.active) W.crime('assault', this.carPos, this.witnessed(this.carPos)) })
+    this.on('carjack', () => W.crime('carjack', this.carPos, this.witnessed(this.carPos)))
+    this.on('trafficWrecked', (c) => W.crime('wreck', c.pos, true))
+    this.on('crush', () => W.crime('wreck', this.carPos, true))
   }
 
   wireCombat() {
@@ -356,6 +422,7 @@ export class Game {
     }
     this.player.dead = true
     this.input.enabled = false
+    this.wanted.clear(arrested ? 'busted' : 'wasted')
     this.emit(arrested ? 'arrested' : 'knockedOut', kind)
     this.koTimer = setTimeout(() => {
       this.koTimer = null
@@ -520,6 +587,10 @@ export class Game {
   }
 
   enterVehicle(v, silent = false) {
+    if (v.type === 'tank' && !silent && this.wanted) {
+      const pp = v.pos
+      if (pp.x > FORT.x0 - 15 && pp.x < FORT.x1 + 15 && pp.z > FORT.z0 - 15 && pp.z < FORT.z1 + 15) this.wanted.crime('military', pp, true)
+    }
     this.player.mode = 'vehicle'
     this.player.vehicle = v
     this.player.setEnabled(false)
@@ -573,6 +644,14 @@ export class Game {
     if (this.active) return this.exitVehicle()
     const v = this.nearbyVehicle()
     if (v) return this.enterVehicle(v)
+    // a police car whose crew is out
+    const pc = this.police.freeCarNear(this.player.pos)
+    if (pc) {
+      this.police.takeCar(pc)
+      this.enterVehicle(pc)
+      this.wanted.crime('copCar', this.carPos, true)
+      return
+    }
     // no parked vehicle nearby: carjack a slow traffic car
     const p = this.player.pos
     const c = this.traffic.nearestDriving(p.x, p.z, 3.6)
@@ -625,6 +704,7 @@ export class Game {
       vp.update(dt, input, { wet: U.uWet.value, waterLevel: WORLD.waterLevel, overWater: this.layout.isWater(p.x, p.z) })
     }
     if (!active && !warmup) this.player.updateFoot(dt, this.input.foot, this.rig.forwardYaw())
+    if (!warmup && this.police) this.police.fixedUpdate(dt)
     this.physics.step(dt)
 
     if (warmup || !active) return
@@ -762,6 +842,8 @@ export class Game {
     this.crowd.update(elapsed)
     this.emotes.update(dt)
     if (this.started) {
+      this.wanted.update(Math.min(dt, 0.05), this.carPos)
+      this.police.update(Math.min(dt, 0.05), this.crowdCtx)
       this.combat.update(Math.min(dt, 0.05), this.input)
       this.tank.update(Math.min(dt, 0.05), this.input)
       this.pickups.update(dt, elapsed, this.carPos, active ? active.type : 'foot')
@@ -788,7 +870,12 @@ export class Game {
       if ((b.x - v.pos.x) ** 2 + (b.z - v.pos.z) ** 2 < 6 * 6) {
         this.sprayCool = 20
         this.combat.repairVehicle(v)
-        this.emit('sprayed', s, v)
+        let lost = false
+        if (this.wanted.level > 0) {
+          if (this.wanted.unseen > 1.5) { this.wanted.clear('sprayed'); lost = true }
+          else return this.emit('notice', 'Not with the police watching! Lose them first')
+        }
+        this.emit('sprayed', s, v, lost)
         return
       }
     }

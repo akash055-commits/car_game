@@ -202,6 +202,23 @@ export class Minimap {
       dot(v.pos.x, v.pos.z, 4.5 * this.dpr, v.type === 'heli' ? '#3d4f7a' : v.type === 'bike' ? '#d84b3a' : '#2b9e96', '#ffffff')
     }
     for (const pl of g.aviation?.planes || []) dot(pl.pos.x, pl.pos.z, 2.5 * this.dpr, '#f4f1ea', '#5b6b7a')
+    // wanted: the search area while they look for you, and every police unit
+    const WL = g.wanted
+    if (WL?.level > 0 && WL.lastSeen) {
+      c.beginPath()
+      c.arc(P(WL.lastSeen.x), P(WL.lastSeen.z), WL.searchRadius * SCALE, 0, Math.PI * 2)
+      c.fillStyle = WL.searching ? 'rgba(60, 110, 230, 0.16)' : 'rgba(220, 50, 40, 0.12)'
+      c.fill()
+      c.lineWidth = 2 / k
+      c.strokeStyle = WL.searching ? 'rgba(60, 110, 230, 0.6)' : 'rgba(220, 50, 40, 0.45)'
+      c.stroke()
+    }
+    const flash = Math.floor(performance.now() / 280) % 2
+    for (const u of g.police?.units || []) {
+      if (u.v && !u.v.wrecked) dot(u.v.pos.x, u.v.pos.z, 4.5 * this.dpr, u.army ? '#5d6b45' : flash ? '#3a63c9' : '#d6452f', '#ffffff')
+      for (const cop of u.crew) if (!cop.inCar && cop.visible && !cop.down) dot(cop.x, cop.z, 2.6 * this.dpr, '#3a63c9', '#ffffff')
+    }
+    if (g.police?.heli) dot(g.police.heli.pos.x, g.police.heli.pos.z, 5 * this.dpr, flash ? '#3a63c9' : '#d6452f', '#ffffff')
     c.restore()
     // Player arrow (centre of the small map; true position on the big one)
     const q = g.carQuat

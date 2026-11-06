@@ -4,7 +4,7 @@ import { EngineSynth, ENGINE_PROFILES, createNoiseBuffer } from './EngineSynth.j
 import { Sfx } from './Sfx.js'
 import { Ambience } from './Ambience.js'
 import { MusicPlayer } from './MusicPlayer.js'
-import { HeliSynth, JetNoise, pulseTrain } from './Machines.js'
+import { HeliSynth, JetNoise, pulseTrain, SirenSynth } from './Machines.js'
 
 const DEFAULTS = { master: 0.8, music: 0.3, sfx: 0.9, musicMuted: false, muted: false }
 
@@ -92,6 +92,8 @@ export class AudioEngine {
     this.ambience = new Ambience(ctx, this.sfxBus, this.buffers)
     this.heli = new HeliSynth(ctx, this.sfxBus, this.buffers)
     this.jets = new JetNoise(ctx, this.sfxBus, this.buffers)
+    this.sirenVoices = [new SirenSynth(ctx, this.sfxBus), new SirenSynth(ctx, this.sfxBus)]
+    this.policeHeli = new HeliSynth(ctx, this.sfxBus, this.buffers)
     this.buildDrivingLayers()
     this.applyVolumes()
     this.music.start(this.season)
@@ -314,6 +316,19 @@ export class AudioEngine {
       if (pl.phase !== 'park') whine = Math.max(whine, size * a * (thrust < 0.5 ? 1 : 0.5))
     }
     this.jets.update(t, Math.min(1, jet), Math.min(1, whine))
+
+    // Police sirens (two nearest cars) + the police helicopter
+    const L2 = st.listener
+    const sir = (st.sirens || []).map((p) => ({ p, d: Math.hypot(p.x - L2.x, p.z - L2.z) })).sort((a, b) => a.d - b.d)
+    this.sirenVoices.forEach((voice, i) => {
+      const s = sir[i]
+      if (!s) return voice.update(t, 0, 0, false)
+      const r = st.right || { x: 1, z: 0 }
+      const pan = Math.max(-1, Math.min(1, ((s.p.x - L2.x) * r.x + (s.p.z - L2.z) * r.z) / (s.d || 1))) * Math.min(1, s.d / 8)
+      voice.update(t, 1 / (1 + (s.d / 35) ** 2), pan, s.d < 30)
+    })
+    const ph = st.policeHeli
+    this.policeHeli.update(t, { rotor: ph ? ph.hp.rotor : 0, load: 0.5, dist: ph ? Math.hypot(ph.pos.x - L2.x, ph.pos.y - L2.y, ph.pos.z - L2.z) : 999, inside: false, speed: 10 })
 
     this.ambience.update({ ...st.ambience, dt })
   }
