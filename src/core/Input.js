@@ -32,11 +32,11 @@ export class Input {
 
   // Walking intent (camera-relative): x = strafe right, y = forward
   get foot() {
-    if (!this.enabled) return { x: 0, y: 0, sprint: false, jump: false }
+    if (!this.enabled) return { x: 0, y: 0, sprint: false, run: false, jump: false }
     const t = this.touch
     const y = (this.has('KeyW', 'ArrowUp', 'KeyZ') ? 1 : 0) - (this.has('KeyS', 'ArrowDown') ? 1 : 0) + (t.moveY || 0)
     const x = (this.has('KeyD', 'ArrowRight') ? 1 : 0) - (this.has('KeyA', 'ArrowLeft', 'KeyQ') ? 1 : 0) + (t.moveX || 0)
-    return { x: Math.max(-1, Math.min(1, x)), y: Math.max(-1, Math.min(1, y)), sprint: this.has('ShiftLeft', 'ShiftRight') || t.boost, jump: this.has('Space') || t.jump }
+    return { x: Math.max(-1, Math.min(1, x)), y: Math.max(-1, Math.min(1, y)), sprint: this.has('ShiftLeft', 'ShiftRight') || t.boost, run: !!t.run, jump: this.has('Space') || t.jump }
   }
 
   // Helicopter: Space/Shift collective, W/S pitch, A/D yaw, Q/E bank (strafe)

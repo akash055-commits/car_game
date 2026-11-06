@@ -48,7 +48,7 @@ export class Collectibles {
       uniforms: { uTime: U.uTime, uNight: U.uNight },
       vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
       fragmentShader: `varying vec2 vUv; uniform float uTime, uNight;
-        void main(){ float a = pow(1.0 - vUv.y, 2.0) * (0.6 + 0.4 * sin(uTime * 3.0 + vUv.y * 10.0)); gl_FragColor = vec4(vec3(1.0, 0.62, 0.28) * a * (0.08 + uNight * 0.1), 1.0); }`,
+        void main(){ float a = pow(clamp(1.0 - vUv.y, 0.0, 1.0), 2.0) * (0.6 + 0.4 * sin(uTime * 3.0 + vUv.y * 10.0)); gl_FragColor = vec4(vec3(1.0, 0.62, 0.28) * a * (0.08 + uNight * 0.1), 1.0); }`,
     })
 
     townSpots(layout, props, town).forEach((spot, i) => {

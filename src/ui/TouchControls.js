@@ -1,6 +1,6 @@
 // On-screen controls for phones / tablets. A left joystick plus a right button cluster that
 // changes with what you're doing:
-//   on foot  – stick walks (push far to run), JUMP, RUN
+//   on foot  – stick walks (push to the edge to run), JUMP, SPRINT (hold)
 //   buggy / bike – stick steers + throttle / brake, GAS, BOOST, DRIFT, EXIT
 //   helicopter – stick pitches + turns, UP / DOWN collective, ENGINE, EXIT
 // One-finger drag on the scene orbits the camera. Context actions (get in, start an
@@ -8,7 +8,7 @@
 import { ICONS } from './UI.js'
 
 const LAYOUTS = {
-  foot: [['jump', 'JUMP'], ['run', 'RUN']],
+  foot: [['jump', 'JUMP'], ['sprint', 'SPRINT', ICONS.boost]],
   car: [['boost', 'BOOST', ICONS.boost], ['gas', 'GAS'], ['drift', 'DRIFT', ICONS.drift], ['exit', 'EXIT']],
   bike: [['boost', 'BOOST', ICONS.boost], ['gas', 'GAS'], ['drift', 'BRAKE'], ['exit', 'EXIT']],
   heli: [['up', 'UP'], ['down', 'DOWN'], ['engine', 'ENGINE'], ['exit', 'EXIT']],
@@ -92,7 +92,7 @@ export class TouchControls {
     } else {
       t.moveX = dead(sx, 0.1)
       t.moveY = -dead(sy, 0.1)
-      if (this.mode === 'foot') t.boost = t.runBtn || Math.hypot(sx, sy) > 0.93
+      if (this.mode === 'foot') t.run = Math.hypot(sx, sy) > 0.93
     }
   }
 
@@ -100,7 +100,7 @@ export class TouchControls {
     if (mode === this.mode) return
     this.mode = mode
     // clear everything the previous scheme wrote
-    Object.assign(this.input.touch, { steer: 0, throttle: 0, brake: 0, handbrake: false, boost: false, gas: false, brakeBtn: false, runBtn: false, moveX: 0, moveY: 0, jump: false, up: false, down: false })
+    Object.assign(this.input.touch, { steer: 0, throttle: 0, brake: 0, handbrake: false, boost: false, gas: false, brakeBtn: false, run: false, moveX: 0, moveY: 0, jump: false, up: false, down: false })
     this.btns.className = `touch-btns m-${mode}`
     this.btns.innerHTML = LAYOUTS[mode].map(([k, label, icon]) => `<div class="tbtn ${k}" data-b="${k}">${icon || ''}<span>${label}</span></div>`).join('')
     this.btns.querySelectorAll('.tbtn').forEach((b) => {
@@ -112,7 +112,7 @@ export class TouchControls {
         if (k === 'drift') { if (mode === 'bike') t.brakeBtn = down; else t.handbrake = down }
         if (k === 'gas') t.gas = down
         if (k === 'jump') t.jump = down
-        if (k === 'run') t.runBtn = down
+        if (k === 'sprint') t.boost = down
         if (k === 'up') t.up = down
         if (k === 'down') t.down = down
         if (down && k === 'exit') this.input.emit('press', 'KeyF')

@@ -71,7 +71,7 @@ export function makeCharacter(rnd, o = {}) {
     // pose
     walkPhase: rnd.random() * 6.28, walk: 0, run: 0, breath: rnd.random() * 6.28,
     carry: 0, item: o.item ?? ITEMS.none, hammer: 0, sweep: 0, wave: 0, cheer: 0, sit: 0, talk: 0,
-    tumble: 0, lie: 0, spin: 0, hop: 0, look: 0, fist: 0, kneel: 0, drive: 0, ride: 0, air: 0, phone: 0, steer: 0, lean: 0,
+    tumble: 0, lie: 0, spin: 0, hop: 0, look: 0, fist: 0, kneel: 0, drive: 0, ride: 0, air: 0, phone: 0, steer: 0, lean: 0, sprint: 0,
     colors: {
       skin,
       hair: o.hair ?? (kind === 'elder' ? rnd.pick(GREY) : rnd.pick(HAIR)),
@@ -241,14 +241,15 @@ export class CrowdRig {
 
   pose(c, t) {
     const ph = c.walkPhase
-    const walk = c.walk, run = c.run
+    const walk = c.walk, run = c.run, sprint = c.sprint || 0
     const kid = c.kind === 'kid'
     const s = Math.sin(ph)
-    // Gait: thigh swing, knee bend on the back-swing, arm swing with bent elbows
-    const thighAmp = 0.48 * walk + 0.85 * run
-    const kneeL = Math.max(0, Math.sin(ph + 1.3)) * (0.75 * walk + 1.5 * run)
-    const kneeR = Math.max(0, Math.sin(ph + 1.3 + Math.PI)) * (0.75 * walk + 1.5 * run)
-    const bob = Math.abs(Math.cos(ph)) * (0.035 * walk + 0.08 * run)
+    // Gait: thigh swing, knee bend on the back-swing, arm swing with bent elbows.
+    // Sprint: longer stride, higher heel kick, more bounce.
+    const thighAmp = 0.48 * walk + 0.85 * run + 0.3 * sprint
+    const kneeL = Math.max(0, Math.sin(ph + 1.3)) * (0.75 * walk + 1.5 * run + 0.55 * sprint)
+    const kneeR = Math.max(0, Math.sin(ph + 1.3 + Math.PI)) * (0.75 * walk + 1.5 * run + 0.55 * sprint)
+    const bob = Math.abs(Math.cos(ph)) * (0.035 * walk + 0.08 * run + 0.03 * sprint)
     const breath = Math.sin(t * 1.6 + c.breath) * 0.012
     const sit = Math.max(c.sit, c.drive, c.ride * 0.8)
     const kneel = c.kneel
@@ -260,8 +261,8 @@ export class CrowdRig {
     _root.compose(_v.set(c.x, c.y + lie * 0.15, c.z), _q, _s.setScalar(c.scale))
 
     // Pelvis
-    const lean = run * 0.22 + c.carry * 0.06 + c.hammer * 0.25 + c.sweep * 0.12 + kneel * 0.15 + c.ride * 0.35 + c.hunch * 0.6
-    const twist = Math.sin(ph) * (walk * 0.1 + run * 0.15) + Math.sin(t * 3 + ph) * c.sweep * 0.25
+    const lean = run * 0.22 + sprint * 0.2 + c.carry * 0.06 + c.hammer * 0.25 + c.sweep * 0.12 + kneel * 0.15 + c.ride * 0.35 + c.hunch * 0.6
+    const twist = Math.sin(ph) * (walk * 0.1 + run * 0.15 + sprint * 0.08) + Math.sin(t * 3 + ph) * c.sweep * 0.25
     // Joints are unscaled; body width only scales the hip / chest meshes (heads stay round)
     const w = c.width
     _pelvis.multiplyMatrices(_root, local(_l, 0, hipY, 0, 0, twist * 0.5, 0))
@@ -312,8 +313,9 @@ export class CrowdRig {
 
     // Arms: [upper X swing, upper Z out, elbow bend]
     // a[1] > 0 swings the right arm outwards, < 0 the left arm outwards
-    let L = [s * 0.45 * walk + s * 0.8 * run, -0.08, -(0.25 * walk + 1.3 * run + 0.12)]
-    let R = [-s * 0.45 * walk - s * 0.8 * run, 0.08, -(0.25 * walk + 1.3 * run + 0.12)]
+    // sprinting: big pumping arm swing with tightly bent elbows
+    let L = [s * (0.45 * walk + 0.8 * run + 0.45 * sprint), -0.08, -(0.25 * walk + 1.3 * run + 0.25 * sprint + 0.12)]
+    let R = [-s * (0.45 * walk + 0.8 * run + 0.45 * sprint), 0.08, -(0.25 * walk + 1.3 * run + 0.25 * sprint + 0.12)]
     if (c.carry > 0.3) {
       if (c.item === ITEMS.log) R = [-0.2, 2.8, -0.4]
       else { L = [-0.55, 0.25, -1.2]; R = [-0.55, -0.25, -1.2] }

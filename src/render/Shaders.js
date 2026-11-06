@@ -1,4 +1,28 @@
-// Post-processing shaders: separable tilt-shift blur and a final colour grade.
+// Post-processing shaders: a NaN/Inf guard, separable tilt-shift blur and a final colour grade.
+
+// Runs right after the scene render. Some GPUs turn edge-case shader maths (pow of a
+// negative, 0/0, normalize(0), half-float overflow) into NaN or Inf pixels; bloom and the
+// blur passes would smear one such pixel into a large black block. Clamp them here.
+// (Range tests instead of isnan(): fast-math compilers may fold isnan() away.)
+export const SanitizeShader = {
+  uniforms: { tDiffuse: { value: null } },
+  vertexShader: /* glsl */ `
+    varying vec2 vUv;
+    void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
+  `,
+  fragmentShader: /* glsl */ `
+    uniform sampler2D tDiffuse;
+    varying vec2 vUv;
+    void main() {
+      vec4 c = texture2D(tDiffuse, vUv);
+      vec3 rgb = c.rgb;
+      // NaN fails every comparison; +Inf fails the upper bound
+      bool ok = all(lessThan(abs(rgb), vec3(60000.0)));
+      rgb = ok ? clamp(rgb, 0.0, 2000.0) : vec3(0.0);
+      gl_FragColor = vec4(rgb, 1.0);
+    }
+  `,
+}
 
 export const TiltShiftShader = {
   uniforms: {

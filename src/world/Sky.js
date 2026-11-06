@@ -36,7 +36,7 @@ export function createSkyMaterial() {
         vec3 sun = normalize(uSunDir);
         float h = clamp(d.y, -1.0, 1.0);
         // base gradient with a warm band near the horizon
-        float t = pow(smoothstep(-0.05, 0.85, h), 0.6);
+        float t = pow(max(smoothstep(-0.05, 0.85, h), 1e-4), 0.6);
         vec3 col = mix(uSkyHorizon, uSkyTop, t);
         float sd = max(dot(d, sun), 0.0);
         float horizonGlow = exp(-abs(h) * 9.0);
@@ -52,7 +52,7 @@ export function createSkyMaterial() {
 
         // clouds: project onto a dome layer
         float above = smoothstep(-0.02, 0.18, h);
-        vec2 cp = d.xz / (h + 0.18) * 1.2;
+        vec2 cp = d.xz / max(h + 0.18, 0.04) * 1.2;
         vec2 wind = vec2(uTime * 0.006, uTime * 0.002);
         float cover = 0.52 - uRain * 0.3 - uSpring * 0.04 + uAutumn * 0.02;
         float n = fbm5(cp * 0.9 + wind);
@@ -78,7 +78,8 @@ export function createSkyMaterial() {
         float tw = 0.55 + 0.45 * sin(uTime * 3.0 + hash12(floor(sp.xz)) * 40.0);
         col += vec3(0.9, 0.95, 1.0) * star * tw * uNight * (1.0 - uRain) * (1.0 - cum);
         // milky haze band
-        float band = exp(-pow(dot(d, normalize(vec3(0.3, 0.5, 0.8))) * 3.2, 2.0)) * smoothstep(0.1, 0.5, h);
+        float bd = dot(d, normalize(vec3(0.3, 0.5, 0.8))) * 3.2;
+        float band = exp(-bd * bd) * smoothstep(0.1, 0.5, h);
         col += vec3(0.5, 0.55, 0.75) * band * fbm5(d.xz * 6.0) * 0.12 * uNight * (1.0 - uRain);
         col += uLightning * vec3(0.55, 0.6, 0.75) * smoothstep(-0.1, 0.4, h);
         gl_FragColor = vec4(col, 1.0);
