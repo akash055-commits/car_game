@@ -4,12 +4,16 @@ import * as THREE from 'three'
 import { U } from '../world/Uniforms.js'
 import { WORLD } from '../world/Layout.js'
 
-const KIND = { dust: 0, spray: 1, exhaust: 2, sparkle: 3 }
+export const KIND = { dust: 0, spray: 1, exhaust: 2, sparkle: 3, smoke: 4, fire: 5, flash: 6, spark: 7, debris: 8, nitro: 9 }
+// gravity (m/s^2, + is up), drag rate and peak alpha per kind
+const GRAV = [0.4, -4, 0.4, -6, 1.2, 2.5, 0, -9, -11, 0.2]
+const DRAG = [2.2, 2.2, 2.2, 1.5, 1.2, 2.5, 6, 0.6, 0.4, 5]
+const ALPHA = [0.55, 0.55, 0.55, 1, 0.7, 0.95, 1, 1, 0.95, 0.9]
 
 export class Effects {
   constructor(scene, layout, quality) {
     this.layout = layout
-    this.max = Math.round(420 * Math.max(0.6, quality.particles))
+    this.max = Math.round(900 * Math.max(0.6, quality.particles))
     this.parts = []
     for (let i = 0; i < this.max; i++) this.parts.push({ alive: false, p: new THREE.Vector3(), v: new THREE.Vector3(), life: 0, max: 1, size: 1, kind: 0, rot: 0, grow: 1 })
     this.cursor = 0
@@ -63,7 +67,13 @@ export class Effects {
           if (vKind < 0.5) col = mix(uDirt, uSand, 0.5) * 1.1 * light;
           else if (vKind < 1.5) col = vec3(0.86, 0.92, 0.96) * light;
           else if (vKind < 2.5) col = vec3(0.62, 0.6, 0.58) * light;
-          else { col = vec3(1.0, 0.85, 0.45) * 4.0; puff = smoothstep(1.0, 0.0, d); }
+          else if (vKind < 3.5) { col = vec3(1.0, 0.85, 0.45) * 4.0; puff = smoothstep(1.0, 0.0, d); }
+          else if (vKind < 4.5) col = vec3(0.2, 0.19, 0.18) * light;
+          else if (vKind < 5.5) { col = mix(vec3(4.0, 1.6, 0.35), vec3(3.2, 0.5, 0.1), d); puff = smoothstep(1.0, 0.1, d); }
+          else if (vKind < 6.5) { col = vec3(5.0, 4.2, 2.6); puff = smoothstep(1.0, 0.0, d); }
+          else if (vKind < 7.5) { col = vec3(4.0, 2.8, 1.2); puff = smoothstep(1.0, 0.3, d); }
+          else if (vKind < 8.5) { col = vec3(0.24, 0.2, 0.17) * light; puff = step(d, 0.8); }
+          else { col = mix(vec3(1.2, 2.2, 5.0), vec3(3.5, 1.4, 4.0), d); puff = smoothstep(1.0, 0.0, d); }
           col *= mix(vec3(1.0), uSunColor, 0.2);
           gl_FragColor = vec4(col, puff * vAlpha);
           #include <fog_fragment>
@@ -75,10 +85,85 @@ export class Effects {
     scene.add(this.mesh)
 
     this.buildSkids(scene)
-    this.emitAcc = [0, 0, 0, 0]
+    this.emitAcc = new Array(8).fill(0)
     this.exhaustAcc = 0
-    this.lastSkid = [null, null, null, null]
+    this.lastSkid = new Array(8).fill(null)
     this._v = new THREE.Vector3()
+    this.buildFlame(scene)
+  }
+
+  // Nitro exhaust flame: two additive cones placed at the active vehicle's exhaust
+  buildFlame(scene) {
+    const g = new THREE.Group()
+    const add = (r, len, color, opacity) => {
+      const m = new THREE.Mesh(
+        new THREE.ConeGeometry(r, len, 12, 1, true).translate(0, len / 2, 0).rotateX(Math.PI / 2),
+        new THREE.MeshBasicMaterial({ color, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }),
+      )
+      m.rotation.y = Math.PI
+      g.add(m)
+      return m
+    }
+    this.flameOuter = add(0.12, 1.0, new THREE.Color(0.9, 1.4, 4.0), 0.75)
+    this.flameInner = add(0.06, 0.6, new THREE.Color(3.5, 3.5, 4.0), 0.9)
+    g.visible = false
+    g.renderOrder = 7
+    scene.add(g)
+    this.flame = g
+    this.flameK = 0
+  }
+
+  updateFlame(dt, vp, visual) {
+    const on = !!(vp && vp.boosting && visual?.exhaustLocal)
+    this.flameK += ((on ? 1 : 0) - this.flameK) * Math.min(1, dt * (on ? 18 : 10))
+    this.flame.visible = this.flameK > 0.02
+    if (!this.flame.visible) return
+    const holder = visual.lean || visual.group
+    holder.updateMatrixWorld()
+    this.flame.position.copy(visual.exhaustLocal).applyMatrix4(holder.matrixWorld)
+    holder.getWorldQuaternion(this.flame.quaternion)
+    const flick = 0.75 + Math.random() * 0.5
+    this.flame.scale.set(this.flameK * (0.9 + Math.random() * 0.2), this.flameK * (0.9 + Math.random() * 0.2), this.flameK * flick * (vp.kind === 'bike' ? 1.1 : 1.3))
+  }
+
+  // Explosion / impact helpers used by combat
+  explosion(p, size = 1) {
+    const n = Math.round(26 * size)
+    for (let i = 0; i < n; i++) {
+      const v = new THREE.Vector3(Math.random() - 0.5, Math.random() * 0.9 + 0.1, Math.random() - 0.5).normalize().multiplyScalar((3 + Math.random() * 7) * size)
+      this.spawn(KIND.fire, p, v, (0.9 + Math.random() * 0.8) * size, 0.5 + Math.random() * 0.5, 2.2)
+    }
+    for (let i = 0; i < n; i++) {
+      const v = new THREE.Vector3(Math.random() - 0.5, Math.random() * 0.8 + 0.4, Math.random() - 0.5).normalize().multiplyScalar((1.5 + Math.random() * 4) * size)
+      this.spawn(KIND.smoke, p.clone().add(new THREE.Vector3((Math.random() - 0.5) * 2 * size, Math.random() * size, (Math.random() - 0.5) * 2 * size)), v, (1.2 + Math.random()) * size, 2.2 + Math.random() * 2.2, 2.6)
+    }
+    for (let i = 0; i < n * 0.6; i++) {
+      const v = new THREE.Vector3(Math.random() - 0.5, Math.random() * 1.2 + 0.4, Math.random() - 0.5).normalize().multiplyScalar((6 + Math.random() * 10) * size)
+      this.spawn(i % 2 ? KIND.spark : KIND.debris, p, v, i % 2 ? 0.12 : 0.18 + Math.random() * 0.2, 0.8 + Math.random() * 1.2, 0)
+    }
+    this.spawn(KIND.flash, p, new THREE.Vector3(), 4.5 * size, 0.16, 1)
+  }
+
+  impactPuff(p, normal, material = 'stone') {
+    const n = normal || new THREE.Vector3(0, 1, 0)
+    for (let i = 0; i < 5; i++) {
+      const v = n.clone().multiplyScalar(1.5 + Math.random() * 2).add(new THREE.Vector3((Math.random() - 0.5) * 2, Math.random(), (Math.random() - 0.5) * 2))
+      this.spawn(material === 'ground' || material === 'dirt' ? KIND.dust : KIND.exhaust, p, v, 0.18 + Math.random() * 0.12, 0.5 + Math.random() * 0.4, 2)
+    }
+    for (let i = 0; i < (material === 'metal' ? 6 : 2); i++) {
+      const v = n.clone().multiplyScalar(3 + Math.random() * 3).add(new THREE.Vector3((Math.random() - 0.5) * 4, Math.random() * 3, (Math.random() - 0.5) * 4))
+      this.spawn(KIND.spark, p, v, 0.06, 0.25 + Math.random() * 0.3, 0)
+    }
+  }
+
+  muzzle(p, dir) {
+    this.spawn(KIND.flash, p, new THREE.Vector3(), 0.45 + Math.random() * 0.25, 0.05, 0.5)
+    this.spawn(KIND.exhaust, p, dir.clone().multiplyScalar(1.5).add(new THREE.Vector3(0, 0.4, 0)), 0.15, 0.6, 2.5)
+  }
+
+  smokeTrail(p, k = 1, fire = false) {
+    this.spawn(KIND.smoke, p, new THREE.Vector3((Math.random() - 0.5) * 0.6, 1.2 + Math.random(), (Math.random() - 0.5) * 0.6), 0.5 + k * 0.5, 1.8 + Math.random(), 2.4)
+    if (fire) this.spawn(KIND.fire, p, new THREE.Vector3((Math.random() - 0.5) * 0.5, 1.5 + Math.random(), (Math.random() - 0.5) * 0.5), 0.4 + Math.random() * 0.4, 0.5 + Math.random() * 0.3, 1.2)
   }
 
   buildSkids(scene) {
@@ -162,6 +247,7 @@ export class Effects {
   }
 
   update(dt, vp, visual, heli = null) {
+    this.updateFlame(dt, vp, visual)
     // Helicopter rotor wash kicks up dust / spray below
     if (heli && heli.rotor > 0.4 && heli.altitude < 12) {
       const p = heli.position
@@ -182,7 +268,7 @@ export class Effects {
     const { right } = vp.basis()
     const rightFlat = this._v.set(right.x, 0, right.z).normalize().clone()
 
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < vp.nWheels; i++) {
       const s = vp.wheelState(i)
       if (!s.contact || !s.point) {
         this.lastSkid[i] = null
@@ -211,6 +297,13 @@ export class Effects {
       }
     }
 
+    // Nitro: blue-violet sparks streaming from the exhaust
+    if (vp.boosting && visual.exhaustLocal) {
+      const holder = visual.lean || visual.group
+      const ex = visual.exhaustLocal.clone().applyMatrix4(holder.matrixWorld)
+      const back = new THREE.Vector3(0, 0, -1).applyQuaternion(visual.group.quaternion)
+      for (let k = 0; k < 2; k++) this.spawn(KIND.nitro, ex, back.clone().multiplyScalar(4 + Math.random() * 3).add(new THREE.Vector3(lv.x * 0.7, 0.3, lv.z * 0.7)), 0.16 + Math.random() * 0.1, 0.18 + Math.random() * 0.12, 1.5)
+    }
     // Exhaust puffs
     this.exhaustAcc += dt * (3 + vp.throttle * 14)
     if (this.exhaustAcc > 1) {
@@ -250,14 +343,19 @@ export class Effects {
         continue
       }
       const k = part.life / part.max
-      part.v.y += (part.kind === KIND.sparkle ? -6 : part.kind === KIND.spray ? -4 : 0.4) * dt
-      part.v.multiplyScalar(1 - Math.min(1, dt * (part.kind === KIND.sparkle ? 1.5 : 2.2)))
+      part.v.y += GRAV[part.kind] * dt
+      part.v.multiplyScalar(1 - Math.min(1, dt * DRAG[part.kind]))
       part.p.addScaledVector(part.v, dt)
+      if ((part.kind === KIND.debris || part.kind === KIND.spark) && part.v.y < 0) {
+        const g = this.layout.getDriveHeight(part.p.x, part.p.z)
+        if (part.p.y < g + 0.05) { part.p.y = g + 0.05; part.v.set(part.v.x * 0.3, -part.v.y * 0.25, part.v.z * 0.3) }
+      }
       P[n * 3] = part.p.x
       P[n * 3 + 1] = part.p.y
       P[n * 3 + 2] = part.p.z
       D[n * 4] = part.size * (1 + k * part.grow)
-      D[n * 4 + 1] = (part.kind === KIND.sparkle ? 1 : 0.55) * Math.min(1, k * 8) * (1 - k) * (1 - k)
+      const fast = part.kind === KIND.flash || part.kind === KIND.spark || part.kind === KIND.debris
+      D[n * 4 + 1] = ALPHA[part.kind] * (fast ? 1 : Math.min(1, k * 8)) * (part.kind === KIND.debris ? 1 - k * k : (1 - k) * (1 - k))
       D[n * 4 + 2] = part.kind
       D[n * 4 + 3] = part.rot + part.life * 0.5
       n++

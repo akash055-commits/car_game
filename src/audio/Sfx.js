@@ -87,10 +87,29 @@ export class Sfx {
     }
   }
 
+  // Car exhaust pop on lift-off: a short crack with a little body (no sub-bass thump)
   pop(gain = 0.25) {
     const t = this.ctx.currentTime + Math.random() * 0.02
-    this.noiseBurst({ t, dur: 0.06, freq: 900 + Math.random() * 900, q: 1.2, gain })
-    this.tone({ t, freq: 70, dur: 0.08, gain: gain * 0.8, glideTo: 40 })
+    this.noiseBurst({ t, dur: 0.06, freq: 1100 + Math.random() * 900, q: 1.2, gain })
+    this.tone({ t, freq: 150, dur: 0.06, gain: gain * 0.45, glideTo: 95 })
+  }
+
+  // Motorbike over-run crackle: quick bright snaps
+  crackle(gain = 0.06) {
+    const t0 = this.ctx.currentTime + Math.random() * 0.015
+    const n = 1 + Math.floor(Math.random() * 3)
+    for (let i = 0; i < n; i++) {
+      const t = t0 + i * (0.025 + Math.random() * 0.03)
+      this.noiseBurst({ t, dur: 0.025 + Math.random() * 0.02, filter: 'highpass', freq: 1800 + Math.random() * 1500, q: 0.7, gain: gain * (0.7 + Math.random() * 0.6) })
+    }
+    this.tone({ t: t0, freq: 240, dur: 0.035, type: 'triangle', gain: gain * 0.3, glideTo: 180 })
+  }
+
+  // Nitro kick: valve hiss + whoosh
+  nitroStart() {
+    const t = this.ctx.currentTime
+    this.noiseBurst({ t, dur: 0.45, freq: 900, q: 0.8, gain: 0.12, attack: 0.02, buffer: 'pink', sweepTo: 3600 })
+    this.noiseBurst({ t, dur: 0.18, filter: 'highpass', freq: 5000, q: 0.7, gain: 0.07 })
   }
 
   landing(strength) {

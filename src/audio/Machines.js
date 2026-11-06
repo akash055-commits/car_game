@@ -2,7 +2,7 @@
 // rotor wash, tail-rotor buzz and turbine whine, all scaled by rotor speed and distance)
 // and airliner jet roar from aircraft near the listener.
 
-function pulseTrain(ctx, sharpness = 6, harmonics = 24) {
+export function pulseTrain(ctx, sharpness = 6, harmonics = 24) {
   // periodic "slap": narrow positive pulses, used as an amplitude envelope
   const real = new Float32Array(harmonics)
   const imag = new Float32Array(harmonics)

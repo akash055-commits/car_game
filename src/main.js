@@ -3,6 +3,7 @@ import '@fontsource/nunito/800.css'
 import './ui/ui.css'
 import { Game } from './Game.js'
 import { AudioEngine } from './audio/AudioEngine.js'
+import { EngineSynth, ENGINE_PROFILES, createNoiseBuffer } from './audio/EngineSynth.js'
 import { UI } from './ui/UI.js'
 import { TouchControls } from './ui/TouchControls.js'
 import { formatTime } from './gameplay/Circuit.js'
@@ -17,6 +18,7 @@ const audio = new AudioEngine()
 const game = new Game(app)
 window.__game = game
 window.__audio = audio
+window.__engineLab = { EngineSynth, ENGINE_PROFILES, createNoiseBuffer } // for offline sound checks
 
 function toggleFullscreen() {
   const d = document

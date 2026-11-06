@@ -257,7 +257,7 @@ export class CrowdRig {
 
     // Root: heading plus tumble / lying / leaning (bike)
     const lie = c.lie
-    _q.setFromEuler(_e.set(-lie * Math.PI * 0.5 + c.tumble * c.spin, c.heading + c.tumble * c.spin * 0.5, c.tumble * Math.sin(c.spin * 1.3) * 0.6 + c.lean, 'YXZ'))
+    _q.setFromEuler(_e.set(-lie * Math.PI * 0.5 + c.tumble * c.spin + (c.pitch || 0), c.heading + c.tumble * c.spin * 0.5, c.tumble * Math.sin(c.spin * 1.3) * 0.6 + c.lean, 'YXZ'))
     _root.compose(_v.set(c.x, c.y + lie * 0.15, c.z), _q, _s.setScalar(c.scale))
 
     // Pelvis

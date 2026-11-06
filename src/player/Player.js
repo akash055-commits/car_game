@@ -132,6 +132,7 @@ export class Player {
     c.walkPhase += dt * actual * (c.run > 0.5 ? 2.35 - c.sprint * 0.45 : 4.4)
     c.air = damp(c.air, this.grounded ? 0 : 1, 10, dt)
     c.drive = c.ride = c.sit = 0
+    c.pitch = 0
     c.visible = true
     if (!wasGrounded && this.grounded && this.onStep) this.onStep(1)
     // footsteps
@@ -144,9 +145,9 @@ export class Player {
   updateSeated(vehicleObj, dt) {
     const c = this.char
     const g = vehicleObj.visual.group
-    const seat = vehicleObj.seat.clone()
-    if (vehicleObj.visual.lean) seat.applyMatrix4(vehicleObj.visual.lean.matrix)
-    seat.applyQuaternion(g.quaternion).add(g.position)
+    const holder = vehicleObj.visual.lean || g
+    g.updateMatrixWorld(true)
+    const seat = holder.localToWorld(vehicleObj.seat.clone())
     c.x = seat.x
     c.y = seat.y - (vehicleObj.type === 'bike' ? 0.62 : 0.5)
     c.z = seat.z
@@ -156,6 +157,7 @@ export class Player {
     c.drive = vehicleObj.type === 'bike' ? 0 : 1
     c.ride = vehicleObj.type === 'bike' ? 1 : 0
     c.lean = vehicleObj.type === 'bike' ? vehicleObj.visual.leanAngle : 0
+    c.pitch = vehicleObj.type === 'bike' ? -(vehicleObj.phys.wheelie || 0) : 0
     c.steer = clamp((vehicleObj.phys.steer || 0) * 2, -1, 1)
     c.visible = true
     this.pos.set(c.x, c.y, c.z)

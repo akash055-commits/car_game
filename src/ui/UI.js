@@ -162,10 +162,12 @@ export class UI {
           <circle class="value" cx="75" cy="75" r="${R}" stroke-dasharray="0 ${C}" transform="rotate(135 75 75)"/>
           <circle class="rpm" cx="75" cy="75" r="${R - 11}" stroke-dasharray="0 ${C}" transform="rotate(135 75 75)"/>
         </svg>
-        <div class="boost">BOOST</div>
+        <div class="boost">NITRO</div>
+        <div class="nitro-bar"><i></i></div>
         <div class="readout"><div class="kmh">0</div><div class="unit">KM/H</div></div>
         <div class="gear">1</div>
       </div>
+      <div class="speedlines"></div>
       <div class="panel now-playing dim"><div class="disc"></div><div><small>Now playing</small><b class="track">—</b></div></div>
       <div class="toasts"></div>
       <div class="panel hint"></div>`
@@ -178,7 +180,7 @@ export class UI {
       coins: this.el(hud, '.coins'), coinsN: this.el(hud, '.coins .n'), prompt: this.el(hud, '.prompt'), promptKey: this.el(hud, '.p-key'), promptText: this.el(hud, '.p-text'),
       countdown: this.el(hud, '.countdown'), unit: this.el(hud, '.unit'), stamina: this.el(hud, '.stamina'), staminaBar: this.el(hud, '.stamina i'),
       embers: this.el(hud, '.embers'), embersN: this.el(hud, '.embers .n'), embersOf: this.el(hud, '.embers .of'),
-      kmh: this.el(hud, '.kmh'), gear: this.el(hud, '.gear'), value: this.el(hud, '.value'), rpm: this.el(hud, '.rpm'), boost: this.el(hud, '.boost'),
+      kmh: this.el(hud, '.kmh'), gear: this.el(hud, '.gear'), value: this.el(hud, '.value'), rpm: this.el(hud, '.rpm'), boost: this.el(hud, '.boost'), nitro: this.el(hud, '.nitro-bar'), nitroBar: this.el(hud, '.nitro-bar i'), speedlines: this.el(hud, '.speedlines'),
       np: this.el(hud, '.now-playing'), npTrack: this.el(hud, '.now-playing .track'), toasts: this.el(hud, '.toasts'),
       night: this.el(hud, '[data-act="night"]'), music: this.el(hud, '[data-act="music"]'), sound: this.el(hud, '[data-act="sound"]'), camera: this.el(hud, '[data-act="camera"]'),
     }
@@ -259,11 +261,12 @@ export class UI {
         this.dom.rpm.classList.toggle('red', false)
         this.dom.gear.textContent = vp.state === 'off' ? 'OFF' : vp.state === 'starting' ? 'START' : vp.state === 'stopping' ? 'STOP' : `${Math.round(Math.abs(vp.speed) * 3.6)}`
         this.dom.boost.classList.remove('on')
+        this.dom.nitro.classList.add('off')
       } else {
         const kmh = Math.round(Math.abs(vp.speed) * 3.6)
         this.dom.kmh.textContent = kmh
         this.dom.unit.textContent = 'KM/H'
-        const frac = Math.min(kmh / (active.type === 'bike' ? 150 : 120), 1)
+        const frac = Math.min(kmh / (active.type === 'bike' ? 240 : active.type === 'tank' ? 70 : 200), 1)
         this.dom.value.setAttribute('stroke-dasharray', `${C * ARC * frac} ${C}`)
         this.dom.value.style.opacity = frac > 0.01 ? 1 : 0
         const rpmFrac = Math.min(vp.rpm / (vp.cfg.redline + 300), 1)
@@ -271,8 +274,16 @@ export class UI {
         this.dom.rpm.classList.toggle('red', vp.rpm > vp.cfg.upRpm)
         this.dom.gear.textContent = vp.gear === -1 ? 'R' : Math.abs(vp.speed) < 0.3 && vp.throttle < 0.05 ? 'N' : vp.gear
         this.dom.boost.classList.toggle('on', vp.boosting)
+        const hasNitro = !!vp.cfg.nitroTime
+        this.dom.nitro.classList.toggle('off', !hasNitro)
+        if (hasNitro) {
+          this.dom.nitroBar.style.transform = `scaleX(${Math.max(0.02, vp.nitro).toFixed(3)})`
+          this.dom.nitro.classList.toggle('burn', vp.boosting)
+          this.dom.nitro.classList.toggle('empty', vp.nitroLock)
+        }
       }
     }
+    this.dom.speedlines.classList.toggle('on', !!(active && active.phys.boosting && Math.abs(active.phys.speed) > 12))
     // stamina bar: on foot, while sprinting or refilling
     const pl = game.player
     const showStamina = !active && pl && (pl.sprinting || pl.stamina < 0.995)
@@ -304,8 +315,8 @@ export class UI {
     if (mode !== this.hintMode) {
       this.hintMode = mode
       const H = {
-        car: '<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive</span><span><kbd>Space</kbd> drift</span><span><kbd>Shift</kbd> boost</span><span><kbd>F</kbd> get out</span><span><kbd>C</kbd> camera</span><span><kbd>H</kbd> horn</span>',
-        bike: '<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> ride</span><span><kbd>Shift</kbd> boost</span><span><kbd>F</kbd> get off</span><span><kbd>C</kbd> camera</span>',
+        car: '<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive</span><span><kbd>Space</kbd> drift</span><span><kbd>Shift</kbd>/<kbd>X</kbd> nitro</span><span><kbd>F</kbd> get out</span><span><kbd>C</kbd> camera</span><span><kbd>H</kbd> horn</span>',
+        bike: '<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> ride</span><span><kbd>Shift</kbd>/<kbd>X</kbd> nitro</span><span><kbd>Space</kbd> brake</span><span><kbd>F</kbd> get off</span><span><kbd>C</kbd> camera</span>',
         heli: '<span><kbd>I</kbd> engine</span><span><kbd>Space</kbd>/<kbd>Shift</kbd> up / down</span><span><kbd>W</kbd><kbd>S</kbd> pitch</span><span><kbd>A</kbd><kbd>D</kbd> turn</span><span><kbd>Q</kbd><kbd>E</kbd> strafe</span><span><kbd>F</kbd> get out</span>',
         foot: '<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</span><span><kbd>Shift</kbd> sprint</span><span><kbd>Space</kbd> jump</span><span><kbd>F</kbd> enter vehicle</span><span>mouse to look</span><span><kbd>C</kbd> camera</span>',
       }

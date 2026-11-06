@@ -1,10 +1,10 @@
 // Audio graph: engine + driving layers + sfx + ambience -> master -> compressor -> out.
 // Music runs through Howler. Started on the first user gesture (browser autoplay rules).
-import { EngineSynth, createNoiseBuffer } from './EngineSynth.js'
+import { EngineSynth, ENGINE_PROFILES, createNoiseBuffer } from './EngineSynth.js'
 import { Sfx } from './Sfx.js'
 import { Ambience } from './Ambience.js'
 import { MusicPlayer } from './MusicPlayer.js'
-import { HeliSynth, JetNoise } from './Machines.js'
+import { HeliSynth, JetNoise, pulseTrain } from './Machines.js'
 
 const DEFAULTS = { master: 0.8, music: 0.3, sfx: 0.9, musicMuted: false, muted: false }
 
@@ -78,7 +78,16 @@ export class AudioEngine {
     this.reverbSend.gain.value = 0.5
     this.reverbSend.connect(this.reverb).connect(this.sfxBus)
 
-    this.engine = new EngineSynth(ctx, this.sfxBus, this.buffers.white)
+    // Engines get their own bus with a gentle low-shelf cut so they never boom
+    this.engineBus = ctx.createGain()
+    const shelf = ctx.createBiquadFilter()
+    shelf.type = 'lowshelf'
+    shelf.frequency.value = 120
+    shelf.gain.value = -4
+    this.engineBus.connect(shelf).connect(this.sfxBus)
+    this.engines = {}
+    for (const k of Object.keys(ENGINE_PROFILES)) this.engines[k] = new EngineSynth(ctx, this.engineBus, this.buffers.white, ENGINE_PROFILES[k])
+    this.engineLevels = { car: 0, bike: 0, tank: 0 }
     this.sfx = new Sfx(ctx, this.sfxBus, this.reverbSend, this.buffers)
     this.ambience = new Ambience(ctx, this.sfxBus, this.buffers)
     this.heli = new HeliSynth(ctx, this.sfxBus, this.buffers)
@@ -145,8 +154,28 @@ export class AudioEngine {
 
     // Rolling road noise
     this.roll = gain()
-    this.rollFilter = filt('lowpass', 220)
-    loop('brown').connect(this.rollFilter).connect(this.roll).connect(this.sfxBus)
+    this.rollFilter = filt('lowpass', 400)
+    loop('pink').connect(filt('highpass', 90)).connect(this.rollFilter).connect(this.roll).connect(this.sfxBus)
+
+    // Nitro: pressurised hiss + rushing air
+    this.nitroHiss = gain()
+    loop('white', 1.1).connect(filt('bandpass', 4200, 1.4)).connect(this.nitroHiss).connect(this.sfxBus)
+    this.nitroRoar = gain()
+    this.nitroRoarFilter = filt('bandpass', 900, 0.8)
+    loop('pink').connect(this.nitroRoarFilter).connect(this.nitroRoar).connect(this.sfxBus)
+
+    // Tank tracks: clanking links (noise gated by a pulse train) + a squeaky idler
+    this.tracks = gain()
+    const clank = ctx.createGain()
+    clank.gain.value = 0
+    this.trackLfo = ctx.createOscillator()
+    this.trackLfo.setPeriodicWave(pulseTrain(ctx, 3))
+    this.trackLfo.frequency.value = 4
+    this.trackLfo.connect(clank.gain)
+    this.trackLfo.start()
+    loop('white', 0.8).connect(filt('bandpass', 1500, 2.2)).connect(clank).connect(this.tracks)
+    loop('brown').connect(filt('lowpass', 260)).connect(filt('highpass', 50)).connect(this.tracks)
+    this.tracks.connect(this.sfxBus)
 
     // Wind rush with speed
     this.windRush = gain()
@@ -194,37 +223,53 @@ export class AudioEngine {
     const active = st.active
     const ground = active && active.type !== 'heli' ? active.phys : null
 
-    // Engine: only while you're driving the buggy or riding the bike
-    this.engineLevel += ((ground ? 1 : 0) - this.engineLevel) * Math.min(1, dt * (ground ? 6 : 3))
-    this.engine.setLevel(this.engineLevel)
-    if (ground && active.type !== this.voiceKind) {
-      this.voiceKind = active.type
-      this.engine.setVoice(active.type)
+    // Engines: one voice per vehicle type, crossfaded as you swap vehicles
+    const voice = ground ? (ground.cfg.sound || active.type) : null
+    for (const k of Object.keys(this.engines)) {
+      const target = voice === k ? 1 : 0
+      this.engineLevels[k] += (target - this.engineLevels[k]) * Math.min(1, dt * (target ? 6 : 3))
+      this.engines[k].setLevel(this.engineLevels[k])
     }
     const vp = ground
     const speed = vp ? Math.abs(vp.speed) : 0
     if (vp) {
       const shifting = vp.shiftTimer > 0.06
-      if (vp.gear !== this.lastGear && vp.lastShift === 1 && vp.throttle > 0.5 && vp.rpm > vp.cfg.upRpm * 0.7) this.sfx.pop(0.06)
+      const bikeVoice = voice === 'bike'
+      if (vp.gear !== this.lastGear && vp.lastShift === 1 && vp.throttle > 0.5 && vp.rpm > vp.cfg.upRpm * 0.7) bikeVoice ? this.sfx.crackle(0.05) : this.sfx.pop(0.05)
       this.lastGear = vp.gear
-      this.engine.update({
-        rpm: vp.rpm, throttle: vp.throttle, load: vp.load, speed, gear: vp.gear,
+      const params = {
+        rpm: vp.rpm, throttle: vp.throttle, load: vp.load, speed, gear: vp.gear, nitro: vp.boosting,
         limiter: vp.rpm > vp.cfg.redline - 50 && vp.throttle > 0.5 && !vp.boosting, shift: shifting,
-      }, t)
-      // Exhaust pops on lift-off from high revs (fewer, softer)
-      if (this.prevThrottle > 0.6 && vp.throttle < 0.25 && vp.rpm > vp.cfg.upRpm * 0.62) this.popBudget = 1 + Math.floor(Math.random() * 3)
-      if (this.popBudget > 0 && Math.random() < dt * 7) {
+      }
+      for (const k of Object.keys(this.engines)) this.engines[k].update(k === voice ? params : { ...params, throttle: 0 }, t)
+      // Exhaust pops on lift-off from high revs (bikes crackle, cars pop)
+      if (this.prevThrottle > 0.6 && vp.throttle < 0.25 && vp.rpm > vp.cfg.upRpm * 0.62) this.popBudget = (bikeVoice ? 3 : 1) + Math.floor(Math.random() * 3)
+      if (this.popBudget > 0 && Math.random() < dt * (bikeVoice ? 12 : 7)) {
         this.popBudget--
-        this.sfx.pop(0.06 + Math.random() * 0.06)
+        if (bikeVoice) this.sfx.crackle(0.04 + Math.random() * 0.05)
+        else this.sfx.pop(0.05 + Math.random() * 0.05)
       }
       this.prevThrottle = vp.throttle
-    } else this.engine.update({ rpm: 900, throttle: 0, load: 0, speed: 0, gear: 1 }, t)
+    } else for (const k of Object.keys(this.engines)) this.engines[k].update({ rpm: 900, throttle: 0, load: 0, speed: 0, gear: 1 }, t)
+
+    // Nitro hiss / roar
+    const nitro = vp && vp.boosting ? 1 : 0
+    this.nitroHiss.gain.setTargetAtTime(nitro * 0.05, t, nitro ? 0.03 : 0.15)
+    this.nitroRoar.gain.setTargetAtTime(nitro * Math.min(speed / 30, 1) * 0.09, t, nitro ? 0.05 : 0.3)
+    this.nitroRoarFilter.frequency.setTargetAtTime(700 + Math.min(speed / 50, 1) * 1400, t, 0.1)
+    if (nitro && !this.wasNitro) this.sfx.nitroStart()
+    this.wasNitro = nitro
+
+    // Tank tracks clank with ground speed
+    const tank = voice === 'tank'
+    this.trackLfo.frequency.setTargetAtTime(2 + speed * 2.6, t, 0.1)
+    this.tracks.gain.setTargetAtTime(tank ? Math.min(speed / 6, 1) * 0.16 + 0.01 : 0, t, 0.15)
 
     // Tyres + surfaces. The squeal now only follows real sideways sliding (drifts, hard
     // cornering) — never plain acceleration or braking — and sits well under the engine.
     let side = 0, dirt = 0, contact = 0
     if (vp) {
-      for (let i = 0; i < 4; i++) {
+      for (let i = 0; i < vp.wheelSurface.length; i++) {
         if (!vp.wheelState(i).contact) continue
         contact++
         if (vp.wheelSurface[i] === 'dirt') dirt++
@@ -239,8 +284,8 @@ export class AudioEngine {
     this.squeal.gain.setTargetAtTime(Math.min(squeal, 1) * 0.055, t, 0.12)
     this.squealOsc.frequency.setTargetAtTime(820 + Math.random() * 90 + sp * 80, t, 0.12)
     this.gravel.gain.setTargetAtTime(onDirt * sp * 0.13 * (contact ? 1 : 0), t, 0.08)
-    this.roll.gain.setTargetAtTime(vp ? sp * (0.15 + onDirt * 0.1 + wet * 0.07) * (contact ? 1 : 0.2) : 0, t, 0.1)
-    this.rollFilter.frequency.setTargetAtTime(160 + sp * 300 + wet * 500, t, 0.1)
+    this.roll.gain.setTargetAtTime(vp && !tank ? sp * (0.11 + onDirt * 0.08 + wet * 0.06) * (contact ? 1 : 0.2) : 0, t, 0.1)
+    this.rollFilter.frequency.setTargetAtTime(320 + sp * 600 + wet * 700, t, 0.1)
     // wind: from any vehicle's airspeed (bike riders hear more of it)
     const air = active ? Math.min(Math.abs(active.phys.speed) / 25, 1.4) : 0
     this.windRush.gain.setTargetAtTime(air * air * (bike ? 0.12 : 0.07), t, 0.15)

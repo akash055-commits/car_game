@@ -179,7 +179,24 @@ kbd {
 .speedo .unit { font-size: 11px; font-weight: 800; color: var(--ink-soft); letter-spacing: 0.12em; }
 .speedo .gear { position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%); font-weight: 800; font-size: 13px; background: var(--ink); color: #fff8ee; border-radius: 8px; padding: 2px 9px; }
 .speedo .boost { position: absolute; top: 26px; left: 50%; transform: translateX(-50%); font-size: 10px; font-weight: 800; letter-spacing: 0.1em; color: var(--accent); opacity: 0; transition: opacity 0.2s; }
-.speedo .boost.on { opacity: 1; }
+.speedo .boost.on { opacity: 1; color: #3f7bff; animation: nitroPulse 0.25s ease-in-out infinite alternate; }
+@keyframes nitroPulse { to { opacity: 0.55; } }
+.speedo .nitro-bar { position: absolute; left: 50%; bottom: -14px; transform: translateX(-50%); width: 112px; height: 7px; padding: 2px; border-radius: 99px; background: var(--paper-solid, #fff8ee); box-shadow: 0 2px 8px rgba(40, 20, 10, 0.18); transition: opacity 0.3s; }
+.speedo .nitro-bar.off { opacity: 0; }
+.speedo .nitro-bar i { display: block; height: 100%; width: 100%; border-radius: inherit; background: linear-gradient(90deg, #2f6bff, #6fd2ff); transform-origin: left; }
+.speedo .nitro-bar.burn i { background: linear-gradient(90deg, #6f3bff, #59c6ff, #ffffff); }
+.speedo .nitro-bar.empty i { background: #c9c2b8; }
+
+/* nitro speed lines: radial streaks around the edge of the screen */
+.speedlines {
+  position: absolute; inset: -10%; pointer-events: none; opacity: 0; transition: opacity 0.25s;
+  background: repeating-conic-gradient(from 0deg, rgba(255, 255, 255, 0) 0deg 3deg, rgba(255, 255, 255, 0.55) 3deg 3.6deg, rgba(255, 255, 255, 0) 3.6deg 7deg);
+  -webkit-mask-image: radial-gradient(circle at 50% 50%, transparent 38%, rgba(0, 0, 0, 0.9) 75%);
+  mask-image: radial-gradient(circle at 50% 50%, transparent 38%, rgba(0, 0, 0, 0.9) 75%);
+  animation: speedSpin 0.6s linear infinite;
+}
+.speedlines.on { opacity: 0.55; }
+@keyframes speedSpin { from { transform: rotate(0deg) scale(1); } 50% { transform: rotate(1.5deg) scale(1.03); } to { transform: rotate(0deg) scale(1); } }
 
 .now-playing {
   position: absolute; right: calc(16px + var(--safe-right)); bottom: calc(180px + var(--safe-bottom));

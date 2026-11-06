@@ -9,8 +9,14 @@ export class BikeVisual {
   constructor(scene, vp, color = 0xd84b3a) {
     this.vp = vp
     this.group = new THREE.Group() // follows physics
+    this.tilt = new THREE.Group() // wheelie pitch around the rear tyre contact
+    this.tilt.position.set(0, -0.62, -0.72)
+    this.pivot = new THREE.Group()
+    this.pivot.position.set(0, 0.62, 0.72)
     this.lean = new THREE.Group() // visual lean around the forward axis
-    this.group.add(this.lean)
+    this.group.add(this.tilt)
+    this.tilt.add(this.pivot)
+    this.pivot.add(this.lean)
     scene.add(this.group)
     const paint = new THREE.MeshPhysicalMaterial({ color, roughness: 0.3, metalness: 0.2, clearcoat: 0.8 })
     const black = new THREE.MeshStandardMaterial({ color: 0x1e1e20, roughness: 0.6 })
@@ -89,6 +95,7 @@ export class BikeVisual {
     const target = clamp(Math.atan2(vp.speed * yawRate, 9.81), -0.75, 0.75) * (vp.grounded ? 1 : 0.3)
     this.leanAngle = damp(this.leanAngle, -target, 8, dt)
     this.lean.rotation.z = this.leanAngle
+    this.tilt.rotation.x = -vp.wheelie
     const braking = vp.braking > 0.05
     this.tailMat.emissiveIntensity = 0.6 + U.uNight.value * 1.2 + (braking ? 4 : 0)
     this.headMat.emissiveIntensity = 1.2 + U.uNight.value * 5

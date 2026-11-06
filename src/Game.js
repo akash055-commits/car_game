@@ -408,7 +408,7 @@ export class Game {
         continue
       }
       // Surface under each wheel (road / dirt / deck) drives grip, dust and audio
-      for (let i = 0; i < 4; i++) {
+      for (let i = 0; i < vp.nWheels; i++) {
         const s = vp.wheelState(i)
         if (!s.point || !s.contact) continue
         const q = this.layout.queryRoad(s.point.x, s.point.z)

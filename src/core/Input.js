@@ -65,7 +65,7 @@ export class Input {
       brake: Math.max(down, t.brake),
       steer: Math.max(-1, Math.min(1, left - right + t.steer)),
       handbrake: this.has('Space') || t.handbrake,
-      boost: this.has('ShiftLeft', 'ShiftRight') || t.boost,
+      boost: this.has('ShiftLeft', 'ShiftRight', 'KeyX') || t.boost,
     }
   }
 }

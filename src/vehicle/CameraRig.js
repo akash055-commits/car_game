@@ -190,7 +190,7 @@ export class CameraRig {
       this.lift = damp(this.lift, this.liftTarget, 3.5, dt)
       desired = this.collide(pivot, at(this.elevation + this.lift), target.body, true)
       lookAt = this.focus.clone()
-      fov = 32 + (target.boosting ? 4 : 0)
+      fov = 32 + (target.boosting ? 7 : 0)
     } else if (mode === 'third') {
       // auto-swing behind the player when walking and the mouse is idle
       if (speed > 0.5 && this.time - this.lastLook > 1.6) this.yaw += angleDelta(this.yaw, heading) * Math.min(1, dt * 1.2)
@@ -214,7 +214,7 @@ export class CameraRig {
       const pivot = new THREE.Vector3(pos.x, pos.y + (heli ? 2 : 1.2), pos.z)
       desired = this.collide(pivot, new THREE.Vector3(pos.x - Math.sin(yaw) * back, pos.y + up, pos.z - Math.cos(yaw) * back), target.body)
       lookAt = new THREE.Vector3(pos.x + Math.sin(yaw) * 4, pos.y + (heli ? 1.5 : 1.1), pos.z + Math.cos(yaw) * 4)
-      fov = (heli ? 55 : 58) + clamp(speed / 28, 0, 1) * 8 + (target.boosting ? 6 : 0)
+      fov = (heli ? 55 : 58) + clamp(speed / 28, 0, 1) * 8 + clamp(speed / 55, 0, 1) * 6 + (target.boosting ? 12 : 0)
       stiff = heli ? 5 : 7
     }
 
@@ -228,6 +228,8 @@ export class CameraRig {
     }
     cam.lookAt(lookAt)
 
+    // Nitro rumble
+    if (target.boosting && this.kind !== 'foot') this.shake = Math.max(this.shake, 0.16 + clamp(speed / 60, 0, 1) * 0.12)
     if (this.shake > 0.001) {
       const s = this.shake * this.shake * 0.5
       const t = performance.now() * 0.05
