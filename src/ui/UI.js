@@ -39,6 +39,8 @@ const LOGO = `<svg class="brand-mark" viewBox="0 0 80 80" aria-hidden="true">
   <path d="M24 44V31M24 31c-6 0-9-4-9-9 3 0 5 1 6 3 0-4 1-7 3-9 2 2 3 5 3 9 1-2 3-3 6-3 0 5-3 9-9 9z" fill="#cc3526" stroke="#5a3424" stroke-width="1.5" stroke-linejoin="round"/>
 </svg>`
 
+const clamp01 = (v) => Math.max(0, Math.min(1, v || 0))
+
 export class UI {
   constructor() {
     this.root = document.createElement('div')
@@ -292,9 +294,22 @@ export class UI {
       this.dom.staminaBar.style.transform = `scaleX(${Math.max(0.02, pl.stamina).toFixed(3)})`
       this.dom.stamina.classList.toggle('tired', pl.tired)
     }
-    // activity panel
-    const a = game.activities?.current
-    this.dom.act.classList.toggle('hidden', !a)
+    // mission / activity panel
+    const ms = game.missions?.current
+    const a = ms ? null : game.activities?.current
+    this.dom.act.classList.toggle('hidden', !a && !ms)
+    if (ms) {
+      this.dom.actName.textContent = ms.def.name
+      this.dom.actGoal.textContent = ms.label
+      this.dom.actStep.textContent = `${Math.min(ms.i + 1, ms.steps.length)}/${ms.steps.length}`
+      const timed = ms.timer !== null
+      const tl = timed ? Math.max(0, ms.timer) : ms.t
+      this.dom.actTime.textContent = `${Math.floor(tl / 60)}:${String(Math.floor(tl % 60)).padStart(2, '0')}`
+      this.dom.actTime.classList.toggle('late', timed && tl < 10)
+      const prog = ms.progress ?? (timed ? tl / ms.limit : 0)
+      this.dom.actBar.style.width = `${clamp01(prog) * 100}%`
+      this.dom.actCoins.textContent = ms.def.reward
+    }
     if (a) {
       this.dom.actName.textContent = ACTIVITY_INFO[a.id].name
       this.dom.actGoal.textContent = a.label
@@ -354,7 +369,7 @@ export class UI {
     this.cdTimer = setTimeout(() => el.classList.add('hidden'), n > 0 ? 900 : 700)
   }
 
-  openActivities(acts) {
+  openActivities(acts, missions = null) {
     if (this.modal) return this.closeSettings()
     const wrap = document.createElement('div')
     wrap.className = 'modal-wrap'
@@ -374,6 +389,16 @@ export class UI {
             <button class="chip" data-route="${id}">Show the way</button>
           </div>`).join('')}
         <p class="note">Drive into a glowing marker and press <kbd>G</kbd> to start. Press <kbd>G</kbd> again to quit an activity.</p>
+        ${missions ? `<h3 class="sub">Missions</h3>
+        ${['bike', 'car', 'tank', 'foot'].map((vt) => missions.starts.filter((st) => st.def.vehicle === vt).map((st) => {
+          const m = missions.info(st.id)
+          return `<div class="act-card mission" style="--c:${m.color}">
+            <div class="act-top"><b><span class="mletter" style="background:${m.color}">${m.letter}</span>${m.name}</b><span>${m.done ? '✓ Passed' : `${m.reward} coins`}</span></div>
+            <p>${m.blurb}</p>
+            <div class="mfoot"><small>${m.label}</small><button class="chip" data-mroute="${st.id}">Show the way</button></div>
+          </div>`
+        }).join('')).join('')}
+        <p class="note">Mission markers are lettered by vehicle: <b>B</b> motorbike, <b>C</b> car, <b>T</b> tank, <b>F</b> on foot. Press <kbd>G</kbd> in a marker to start, <kbd>G</kbd> again to give up.</p>` : ''}
       </div>`
     document.body.appendChild(wrap)
     this.modal = wrap
@@ -381,6 +406,10 @@ export class UI {
     wrap.querySelector('[data-close]').addEventListener('click', () => this.closeSettings())
     wrap.querySelectorAll('[data-route]').forEach((b) => b.addEventListener('click', () => {
       this.fire('route', b.dataset.route)
+      this.closeSettings()
+    }))
+    wrap.querySelectorAll('[data-mroute]').forEach((b) => b.addEventListener('click', () => {
+      this.fire('missionRoute', b.dataset.mroute)
       this.closeSettings()
     }))
   }

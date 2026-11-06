@@ -44,6 +44,7 @@ import { Pickups } from './combat/Pickups.js'
 import { Wanted } from './police/Wanted.js'
 import { Police } from './police/Police.js'
 import { FORT } from './world/Regions.js'
+import { Missions } from './gameplay/Missions.js'
 import { Activities } from './gameplay/Activities.js'
 
 const nextFrame = () => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)))
@@ -211,6 +212,7 @@ export class Game {
     this.pickups = new Pickups(this.scene, this.layout, this.town)
     this.wanted = new Wanted()
     this.police = new Police(this)
+    this.missions = new Missions(this)
     // left click shoots (cursor aim) in the overhead view whenever a shot is possible
     this.rig.fireButton = (button) => button === 0 && this.started && (this.combat.canShoot() || this.active?.type === 'tank')
     this.rig.wheelLocked = () => !this.active && this.rig.mode === 'third'
@@ -268,7 +270,10 @@ export class Game {
       }
       if (isCar && other?.kind === 'car' && strength > 0.1 && this.active) {
         const h = t1?.kind === 'car' && this.physics.world.getCollider(h1)?.parent() !== this.active.phys.body ? h1 : h2
-        const pv = this.police.vehicleByBody(this.physics.world.getCollider(h)?.parent())
+        const otherBody = this.physics.world.getCollider(h)?.parent()
+        const ov = this.allVehicles().find((k) => k.phys.body === otherBody && k !== this.active)
+        if (ov && strength > 0.15) this.combat.damageVehicle(ov, strength * (this.active.type === 'tank' ? 900 : 260), null, 'player')
+        const pv = this.police.vehicleByBody(otherBody)
         if (pv && performance.now() - (this.lastCopHit || 0) > 1500) {
           this.lastCopHit = performance.now()
           this.wanted.crime('copHit', this.carPos, true)
@@ -317,6 +322,11 @@ export class Game {
   start() {
     this.started = true
     this.input.enabled = true
+  }
+
+  // Every drivable / driving vehicle: yours, the police's and the current mission's
+  allVehicles() {
+    return [...this.vehicles, ...this.police.vehicles, ...this.missions.vehicles]
   }
 
   // Is a police officer / car within r metres of p?
@@ -391,6 +401,9 @@ export class Game {
 
   // G: start an activity / mission, open a gun shop, or quit what you're doing
   interact() {
+    if (this.missions.current) return this.missions.quit()
+    const ms = !this.activities.current && this.missions.nearStart(this.carPos)
+    if (ms) return this.missions.start(ms.id)
     if (!this.active) {
       const shop = this.nearPlace(this.town.gunShops, 4.5)
       if (shop) return this.emit('openShop', shop)
@@ -705,6 +718,7 @@ export class Game {
     }
     if (!active && !warmup) this.player.updateFoot(dt, this.input.foot, this.rig.forwardYaw())
     if (!warmup && this.police) this.police.fixedUpdate(dt)
+    if (!warmup && this.missions) this.missions.fixedUpdate(dt)
     this.physics.step(dt)
 
     if (warmup || !active) return
@@ -754,14 +768,15 @@ export class Game {
     if (this.promptTimer <= 0) {
       this.promptTimer = 0.2
       const near = !active ? this.nearbyVehicle() : null
-      const start = this.activities.nearStart(this.carPos)
+      const start = this.missions.current ? null : this.activities.nearStart(this.carPos)
+      const mstart = this.activities.current ? null : this.missions.nearStart(this.carPos)
       let jack = null
       const shop = !active && !start ? this.nearPlace(this.town.gunShops, 4.5) : null
       if (!active && !near && !shop) {
         const c = this.traffic.nearestDriving(this.player.pos.x, this.player.pos.z, 3.6)
         if (c && c.speed < 7) jack = c
       }
-      this.emit('prompt', active ? active : null, near, start, jack, shop)
+      this.emit('prompt', active ? active : null, near, start, jack, shop, mstart)
     }
 
     // Atmosphere
@@ -846,6 +861,7 @@ export class Game {
       this.police.update(Math.min(dt, 0.05), this.crowdCtx)
       this.combat.update(Math.min(dt, 0.05), this.input)
       this.tank.update(Math.min(dt, 0.05), this.input)
+      this.missions.update(Math.min(dt, 0.05), elapsed)
       this.pickups.update(dt, elapsed, this.carPos, active ? active.type : 'foot')
       this.checkSprayShop(dt)
     }

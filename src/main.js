@@ -125,7 +125,11 @@ function wire() {
     ui.toast('Activity records cleared')
     return false
   })
-  ui.on('activities', () => ui.openActivities(game.activities))
+  ui.on('activities', () => ui.openActivities(game.activities, game.missions))
+  ui.on('missionRoute', (id) => {
+    game.missions.route(id)
+    ui.toast(`Follow the arrow to <em>${game.missions.info(id).name}</em>`, { duration: 2200 })
+  })
   ui.on('route', (id) => {
     game.activities.route(id)
     ui.toast(`Follow the arrow to <em>${ACTIVITY_INFO[id].name}</em>`, { duration: 2200 })
@@ -156,8 +160,12 @@ function wire() {
     audio.sfx?.complete()
     ui.toast('All embers found. The valley glows for you ✦', { big: true, duration: 5000 })
   })
-  game.on('openActivities', () => ui.openActivities(game.activities))
-  game.on('prompt', (active, near, start, jack, shop) => {
+  game.on('openActivities', () => ui.openActivities(game.activities, game.missions))
+  game.on('prompt', (active, near, start, jack, shop, mstart) => {
+    if (mstart) {
+      const m = game.missions.info(mstart.id)
+      return ui.prompt('G', `Mission: ${m.name} (${m.label.toLowerCase()})`)
+    }
     if (shop) return ui.prompt('G', 'Bullseye Arms: buy ammo & armour')
     if (start) return ui.prompt('G', `Start ${ACTIVITY_INFO[start.id].name}`)
     if (active?.type === 'heli' && (active.phys.state === 'off' || active.phys.state === 'stopping')) return ui.prompt('I', 'Start the engine')
@@ -318,6 +326,30 @@ function wire() {
   game.on('wheelOpen', () => hud?.openWheel(C))
   game.on('wheelClose', () => { if (hud?.wheelOpen) C.select(hud.closeWheel()) })
   window.addEventListener('mousemove', (e) => { if (hud?.wheelOpen) hud.moveWheel(e.movementX, e.movementY, C) })
+
+  // ---------------------------------------------------------------- missions
+  const M = game.missions
+  M.on('notice', (t) => { audio.sfx?.invalid(); ui.toast(t, { duration: 2600 }) })
+  M.on('start', (m) => {
+    audio.sfx?.checkpoint()
+    hud?.big(m.def.name.toUpperCase(), m.def.blurb, 3800, 'good')
+  })
+  M.on('step', (m) => { if (m.i > 0) audio.sfx?.click() })
+  M.on('checkpoint', () => audio.sfx?.checkpoint())
+  M.on('countdown', (n) => { audio.sfx?.beep(n === 0); ui.countdown(n) })
+  M.on('photo', (n) => { audio.sfx?.click(); ui.toast(`Snap! Photo <em>${n}</em>`, { duration: 1200 }) })
+  M.on('jump', (n) => ui.toast(`Big air! Jump <em>${n}</em>`, { duration: 1000 }))
+  M.on('rangeHit', () => audio.sfx?.coin(1))
+  M.on('target', (n, total) => ui.toast(`Target <em>${n}/${total}</em> destroyed`, { duration: 1200 }))
+  M.on('passed', (m, reward, first) => {
+    audio.sfx?.fanfare()
+    hud?.big('MISSION PASSED', `+${reward} coins${first ? ' · first clear!' : ''}`, 4200, 'good')
+    ui.setCoins(game.activities.coins, true)
+  })
+  M.on('failed', (m, reason) => {
+    audio.sfx?.stinger(false)
+    hud?.big('MISSION FAILED', reason, 3600, 'bad')
+  })
 
   // Activities
   const fmtCoins = (n) => `<em>+${n}</em> coins`

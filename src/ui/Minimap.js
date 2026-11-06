@@ -197,6 +197,19 @@ export class Minimap {
       if (!acts.current) for (const st of acts.starts) dot(st.x, st.z, 6 * this.dpr, colors[st.id])
       if (acts.target) dot(acts.target.x, acts.target.z, (6 + Math.sin(performance.now() / 180) * 2) * this.dpr, '#ff5a36', '#ffffff')
     }
+    // missions: lettered markers by vehicle + the current mission target
+    const MS = g.missions
+    if (MS) {
+      if (!MS.current) {
+        for (const st of MS.starts) {
+          const col = { bike: '#e8742c', car: '#3a7bd5', tank: '#5d8a3a', foot: '#d6452f' }[st.def.vehicle]
+          dot(st.x, st.z, 7 * this.dpr, col, '#ffffff')
+        }
+      }
+      const tg = MS.target || MS.waypoint
+      if (tg) dot(tg.x, tg.z, (6 + Math.sin(performance.now() / 160) * 2) * this.dpr, '#ffd23a', '#2f2118')
+      for (const v of MS.vehicles) if (!v.wrecked) dot(v.pos.x, v.pos.z, 4 * this.dpr, '#c8462f', '#ffffff')
+    }
     for (const v of g.vehicles) {
       if (g.active === v) continue
       dot(v.pos.x, v.pos.z, 4.5 * this.dpr, v.type === 'heli' ? '#3d4f7a' : v.type === 'bike' ? '#d84b3a' : '#2b9e96', '#ffffff')

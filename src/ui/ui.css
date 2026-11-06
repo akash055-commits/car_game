@@ -422,3 +422,10 @@ body.touch-mode .speedo .boost { top: 18px; }
 body.touch-mode .vitals { bottom: auto; top: calc(70px + var(--safe-top)); left: calc(12px + var(--safe-left)); width: 140px; }
 body.touch-mode .weapon-hud { top: calc(64px + var(--safe-top)); }
 body.touch-mode .wanted { top: calc(118px + var(--safe-top)); }
+
+/* missions in the J menu */
+.modal h3.sub { margin: 18px 0 8px; font-size: 17px; font-weight: 800; }
+.act-card.mission .mletter { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; color: #fff8ee; font-size: 12px; font-weight: 800; margin-right: 8px; vertical-align: middle; }
+.act-card.mission .mfoot { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.act-card.mission .mfoot small { color: var(--ink-soft); font-weight: 700; }
+.shop-item .chip[disabled] { opacity: 0.4; pointer-events: none; }

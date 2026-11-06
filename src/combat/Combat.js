@@ -506,10 +506,12 @@ export class Combat {
       if (car) g.traffic.damage(car, dmg * 0.45, null, 'bullet')
       this.emit('hitVehicle', car, owner)
     } else if (kind === 'car') {
-      const v = g.vehicles.find((k) => k.phys.body === body) || g.police?.vehicleByBody(body)
+      const v = g.allVehicles().find((k) => k.phys.body === body)
       if (v) this.damageVehicle(v, dmg * 0.5, null, owner)
     } else if (kind === 'plane') {
       g.aviation.damage?.(body, dmg)
+    } else if (kind === 'target') {
+      this.emit('targetHit', tag.id, point)
     } else if (kind === 'policeHeli') {
       g.police?.damageHeli(dmg)
       if (owner === 'player') g.wanted?.crime('copHit', g.carPos, true)
@@ -621,7 +623,7 @@ export class Combat {
       g.traffic.damage(c, damage * k * 1.2, { x: dir.x * 9000 * k, y: 14000 * k + 4000, z: dir.z * 9000 * k }, 'explosion')
     }
     // player vehicles (parked or driven)
-    for (const v of [...g.vehicles, ...(g.police?.vehicles || [])]) {
+    for (const v of g.allVehicles()) {
       const d = v.pos.distanceTo(p)
       if (d > radius * 1.5) continue
       const k = 1 - d / (radius * 1.5)
@@ -669,7 +671,7 @@ export class Combat {
   updateFires(dt) {
     const g = this.game
     for (const v of this.burning) {
-      if (!v.phys || !g.vehicles.includes(v) && !(g.police?.vehicles || []).includes(v)) { this.burning.delete(v); continue }
+      if (!v.phys || !g.allVehicles().includes(v)) { this.burning.delete(v); continue }
       const ph = v.phys
       const k = 1 - ph.health / ph.maxHealth
       v.smokeAcc = (v.smokeAcc || 0) + dt * (v.wrecked ? 6 : 4 + k * 10)
