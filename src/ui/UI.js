@@ -142,9 +142,9 @@ export class UI {
       <div class="panel stamina off" title="Stamina"><i></i></div>
       <div class="toolbar">
         <div class="panel group seasons">
-          <button class="icon-btn" data-season="autumn" data-tip="Autumn (1)" aria-label="Autumn">${ICONS.autumn}</button>
-          <button class="icon-btn" data-season="spring" data-tip="Spring (2)" aria-label="Spring">${ICONS.spring}</button>
-          <button class="icon-btn" data-season="monsoon" data-tip="Monsoon (3)" aria-label="Monsoon">${ICONS.monsoon}</button>
+          <button class="icon-btn" data-season="autumn" data-tip="Autumn (8)" aria-label="Autumn">${ICONS.autumn}</button>
+          <button class="icon-btn" data-season="spring" data-tip="Spring (9)" aria-label="Spring">${ICONS.spring}</button>
+          <button class="icon-btn" data-season="monsoon" data-tip="Monsoon (0)" aria-label="Monsoon">${ICONS.monsoon}</button>
         </div>
         <div class="panel group">
           <button class="icon-btn" data-act="activities" data-tip="Activities (J)" aria-label="Activities">${ICONS.flag}</button>
@@ -318,9 +318,10 @@ export class UI {
         car: '<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive</span><span><kbd>Space</kbd> drift</span><span><kbd>Shift</kbd>/<kbd>X</kbd> nitro</span><span><kbd>F</kbd> get out</span><span><kbd>C</kbd> camera</span><span><kbd>H</kbd> horn</span>',
         bike: '<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> ride</span><span><kbd>Shift</kbd>/<kbd>X</kbd> nitro</span><span><kbd>Space</kbd> brake</span><span><kbd>F</kbd> get off</span><span><kbd>C</kbd> camera</span>',
         heli: '<span><kbd>I</kbd> engine</span><span><kbd>Space</kbd>/<kbd>Shift</kbd> up / down</span><span><kbd>W</kbd><kbd>S</kbd> pitch</span><span><kbd>A</kbd><kbd>D</kbd> turn</span><span><kbd>Q</kbd><kbd>E</kbd> strafe</span><span><kbd>F</kbd> get out</span>',
-        foot: '<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</span><span><kbd>Shift</kbd> sprint</span><span><kbd>Space</kbd> jump</span><span><kbd>F</kbd> enter vehicle</span><span>mouse to look</span><span><kbd>C</kbd> camera</span>',
+        foot: '<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</span><span><kbd>Shift</kbd> sprint</span><span><kbd>F</kbd> enter / steal</span><span>click shoot</span><span>right-click aim</span><span><kbd>1</kbd>–<kbd>7</kbd>/<kbd>Tab</kbd> weapons</span><span><kbd>R</kbd> reload</span>',
+        tank: '<span><kbd>W</kbd><kbd>S</kbd> drive</span><span><kbd>A</kbd><kbd>D</kbd> turn</span><span>mouse aim turret</span><span>click fire cannon</span><span>right-click machine gun</span><span><kbd>F</kbd> get out</span>',
       }
-      this.hint.innerHTML = H[mode]
+      this.hint.innerHTML = H[mode] || H.car
       this.hint.classList.remove('dim')
       clearTimeout(this.hintTimer)
       this.hintTimer = setTimeout(() => this.hint.classList.add('dim'), 9000)
@@ -382,6 +383,41 @@ export class UI {
       this.fire('route', b.dataset.route)
       this.closeSettings()
     }))
+  }
+
+  // ------------------------------------------------------------ Gun shop
+  // items: [{ id, name, desc, price }], buy(id) -> coins left or false
+  openShop(title, items, coins, buy) {
+    if (this.modal) return this.closeSettings()
+    const wrap = document.createElement('div')
+    wrap.className = 'modal-wrap'
+    const render = (c) => `
+      <div class="panel modal shop" role="dialog" aria-label="${title}">
+        <h2>${title} <button class="icon-btn" data-close aria-label="Close">${ICONS.close}</button></h2>
+        <div class="coin-total">${ICONS.coin}<b>${c}</b> coins</div>
+        ${items.map((it) => `
+          <div class="act-card shop-item" style="--c:#e8742c">
+            <div class="act-top"><b>${it.name}</b><span>${it.price} coins</span></div>
+            <p>${it.desc}</p>
+            <button class="chip" data-buy="${it.id}" ${c < it.price ? 'disabled' : ''}>Buy</button>
+          </div>`).join('')}
+        <p class="note">Earn coins with activities and missions (<kbd>J</kbd>).</p>
+      </div>`
+    wrap.innerHTML = render(coins)
+    const bind = () => {
+      wrap.querySelector('[data-close]').addEventListener('click', () => this.closeSettings())
+      wrap.querySelectorAll('[data-buy]').forEach((b) => b.addEventListener('click', () => {
+        const left = buy(b.dataset.buy)
+        if (left === false) return
+        wrap.innerHTML = render(left)
+        bind()
+      }))
+    }
+    document.body.appendChild(wrap)
+    this.modal = wrap
+    if (document.pointerLockElement) document.exitPointerLock?.()
+    wrap.addEventListener('click', (e) => { if (e.target === wrap) this.closeSettings() })
+    bind()
   }
 
   // ------------------------------------------------------------ Settings

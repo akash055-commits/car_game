@@ -194,6 +194,7 @@ export class CrowdRig {
       item: make(new THREE.BoxGeometry(1, 1, 1)),
       // held guns (drawn in the right hand)
       pistol: make(mergeGeometries([new THREE.BoxGeometry(0.035, 0.035, 0.17).translate(0, 0.02, 0.07), new THREE.BoxGeometry(0.03, 0.09, 0.04).rotateX(-0.25).translate(0, -0.025, 0.0)])),
+      launcher: make(mergeGeometries([new THREE.CylinderGeometry(0.075, 0.075, 1.15, 12, 1, true).rotateX(Math.PI / 2).translate(0, 0.06, 0.15), new THREE.CylinderGeometry(0.095, 0.075, 0.12, 12).rotateX(Math.PI / 2).translate(0, 0.06, 0.72), new THREE.BoxGeometry(0.035, 0.1, 0.04).translate(0, -0.03, 0.05), new THREE.BoxGeometry(0.03, 0.06, 0.08).translate(0, 0.16, 0.2)])),
       rifle: make(mergeGeometries([new THREE.BoxGeometry(0.045, 0.06, 0.55).translate(0, 0.03, 0.15), new THREE.BoxGeometry(0.02, 0.02, 0.3).translate(0, 0.05, 0.55), new THREE.BoxGeometry(0.035, 0.09, 0.04).rotateX(-0.3).translate(0, -0.03, 0.02), new THREE.BoxGeometry(0.035, 0.1, 0.03).translate(0, -0.035, 0.2), new THREE.BoxGeometry(0.05, 0.08, 0.2).translate(0, 0.01, -0.18)])),
     }
     this.hairPart = { short: 'hairShort', curly: 'hairCurly', long: 'hairLong', bun: 'hairBun', pony: 'hairPony' }
@@ -239,6 +240,7 @@ export class CrowdRig {
     set('belt', C.belt || '#3b2a20')
     set('pistol', '#2a2a2e')
     set('rifle', '#2f3330')
+    set('launcher', '#4f5b3a')
     for (const h of Object.values(this.hairPart)) set(h, C.hair)
     set('beard', C.hair)
     set('hatCap', C.hat)
@@ -457,7 +459,7 @@ export class CrowdRig {
     if (c.air > 0.3) { L = [-0.4, -1.0, -0.6]; R = [-0.4, 1.0, -0.6] }
     const pitchA = c.aimPitch || 0
     if (aim > 0.3) {
-      if (c.weapon === 'rifle') { R = [-1.25 - pitchA, -0.35, -1.25]; L = [-1.5 - pitchA, 0.3, -0.35] }
+      if (c.weapon === 'rifle' || c.weapon === 'shotgun' || c.weapon === 'sniper' || c.weapon === 'rocket') { R = [-1.25 - pitchA, -0.35, -1.25]; L = [-1.5 - pitchA, 0.3, -0.35] }
       else { R = [-1.52 - pitchA, -0.18, -0.08]; L = [-1.45 - pitchA, 0.38, -0.42] }
     }
     if (c.punch > 0.05) {
@@ -480,18 +482,13 @@ export class CrowdRig {
 
     // Guns: drawn while aiming (police, gang members, the player)
     const showGun = c.weapon && (aim > 0.2 || c.holdGun) && c.lie < 0.5
-    if (showGun && c.weapon === 'rifle') {
-      _j1.multiplyMatrices(this._handR, local(_l, 0, -0.06, 0.02, Math.PI / 2, 0, 0))
-      this.set('rifle', c, _j1)
-      this.set('pistol', c, ZERO)
-    } else if (showGun) {
-      _j1.multiplyMatrices(this._handR, local(_l, 0, -0.07, 0.015, Math.PI / 2, 0, 0))
-      this.set('pistol', c, _j1)
-      this.set('rifle', c, ZERO)
-    } else {
-      this.set('pistol', c, ZERO)
-      this.set('rifle', c, ZERO)
+    const held = showGun ? (c.weapon === 'pistol' || c.weapon === 'smg' ? 'pistol' : c.weapon === 'rocket' ? 'launcher' : 'rifle') : null
+    for (const part of ['pistol', 'rifle', 'launcher']) {
+      if (part !== held) { this.set(part, c, ZERO); continue }
+      _j1.multiplyMatrices(this._handR, local(_l, 0, part === 'pistol' ? -0.07 : -0.06, part === 'pistol' ? 0.015 : 0.02, Math.PI / 2, 0, 0))
+      this.set(part, c, _j1)
     }
+    if (c.trackHands) (c.handMatrix ||= new THREE.Matrix4()).copy(this._handR)
 
     // Item
     const it = ITEM_LOOK[c.item]

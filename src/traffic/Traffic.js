@@ -203,11 +203,27 @@ export class Traffic {
     if (!c || c.state === 'hidden') return
     if (c.state === 'wrecked') {
       if (impulse) c.body.applyImpulse(impulse, true)
+      c.timer = Math.min(c.timer, 10)
       return
     }
     c.health -= amount
     c.panic = 7
-    if (c.health <= 0) this.wreck(c, impulse, kind)
+    if (c.health > 0) return
+    if (c.state === 'burning' && kind === 'bullet') { c.timer += amount * 0.01; return }
+    if (kind === 'explosion' || kind === 'crush' || c.state === 'burning') return this.wreck(c, impulse, kind)
+    // shot up: the engine catches fire, the driver bails out, then it blows
+    if (c.state === 'drive') {
+      c.state = 'burning'
+      c.timer = 0
+      c.speed = 0
+      const d = c.driver
+      d.drive = 0
+      d.x = c.pos.x + Math.cos(c.heading) * 1.4
+      d.z = c.pos.z - Math.sin(c.heading) * 1.4
+      d.y = this.layout.getDriveHeight(d.x, d.z)
+      d.ejected = { t: 0, fx: c.pos.x, fz: c.pos.z }
+      this.emit('burning', c)
+    }
   }
 
   // The car is destroyed: becomes a burnt physics object, driver gone, respawns later
@@ -216,7 +232,7 @@ export class Traffic {
     c.state = 'wrecked'
     c.health = 0
     c.timer = 0
-    c.driver.visible = false
+    if (!c.driver.ejected) c.driver.visible = false
     c.mesh.material = burntMaterial()
     c.body.setBodyType(R.RigidBodyType.Dynamic, true)
     c.body.setLinearDamping(0.3)
@@ -283,23 +299,32 @@ export class Traffic {
   updateStates(dt, ctx) {
     const player = ctx.player
     for (const c of this.cars) {
-      if (c.state === 'wrecked') {
+      if (c.state === 'burning') {
+        c.timer += dt
+        this.runDriver(c, dt)
+        if (c.timer > 4.5) this.emit('explode', c)
+      } else if (c.state === 'wrecked') {
+        this.runDriver(c, dt)
         c.timer += dt
         c.burning = c.timer < 18
         if (c.timer > 30 && (!player || (c.pos.x - player.x) ** 2 + (c.pos.z - player.z) ** 2 > 90 * 90)) this.respawn(c, player)
       } else if (c.state === 'hidden') {
         c.timer += dt
-        const d = c.driver
-        if (d.ejected) {
-          d.ejected.t += dt
-          d.panic = 1
-          const dx = d.x - d.ejected.fx, dz = d.z - d.ejected.fz, l = Math.hypot(dx, dz) || 1
-          walkTo(d, d.x + (dx / l) * 5, d.z + (dz / l) * 5, 4.8, dt, { ground: (x, z) => this.layout.getDriveHeight(x, z) }, 0.01)
-          if (d.ejected.t > 7) { d.ejected = null; d.visible = false }
-        }
+        this.runDriver(c, dt)
         if (c.timer > 25) this.respawn(c, player)
       }
     }
+  }
+
+  // A driver who bailed out runs off, then vanishes
+  runDriver(c, dt) {
+    const d = c.driver
+    if (!d.ejected) return
+    d.ejected.t += dt
+    d.panic = 1
+    const dx = d.x - d.ejected.fx, dz = d.z - d.ejected.fz, l = Math.hypot(dx, dz) || 1
+    walkTo(d, d.x + (dx / l) * 5, d.z + (dz / l) * 5, 4.8, dt, { ground: (x, z) => this.layout.getDriveHeight(x, z) }, 0.01)
+    if (d.ejected.t > 7) { d.ejected = null; d.visible = false }
   }
 
   // The player rammed a traffic car: it stops, honks, the driver gets cross

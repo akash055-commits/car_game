@@ -24,6 +24,15 @@ export class Player {
     }))
     this.char.noReact = true
     this.char.isPlayer = true
+    this.char.trackHands = true
+    // Health + body armour; regenerates up to half after a few quiet seconds
+    this.health = 100
+    this.armor = 0
+    this.lastHurt = -99
+    this.dead = false
+    this.knock = null // knocked over (blast / bike crash): ballistic tumble, then get up
+    this.aiming = false
+    this.listeners = {}
     this.body = world.createRigidBody(R.RigidBodyDesc.kinematicPositionBased().setTranslation(spawn.x, spawn.y + 0.95, spawn.z))
     this.collider = world.createCollider(R.ColliderDesc.capsule(0.55, 0.3), this.body)
     physics.tag(this.collider, { kind: 'player' })
@@ -53,6 +62,57 @@ export class Player {
     return this.pos
   }
 
+  on(n, fn) {
+    ;(this.listeners[n] ||= []).push(fn)
+  }
+
+  emit(n, ...a) {
+    for (const fn of this.listeners[n] || []) fn(...a)
+  }
+
+  // Damage with armour soaking up two thirds. from: {x, z} for the hit-direction indicator
+  damage(amount, from = null, kind = 'bullet') {
+    if (this.dead || amount <= 0) return
+    if (this.armor > 0) {
+      const soak = Math.min(this.armor, amount * 0.66)
+      this.armor -= soak
+      amount -= soak
+    }
+    this.health = Math.max(0, this.health - amount)
+    this.lastHurt = performance.now() / 1000
+    this.emit('hurt', amount, from, kind)
+    if (this.health <= 0) {
+      this.dead = true
+      this.emit('dead', kind)
+    }
+  }
+
+  heal(amount) {
+    this.health = Math.min(100, this.health + amount)
+  }
+
+  revive() {
+    this.dead = false
+    this.health = 100
+    this.knock = null
+    const c = this.char
+    c.lie = 0
+    c.tumble = 0
+    c.spin = 0
+    c.expr = null
+  }
+
+  // Thrown by an explosion or off a crashing bike
+  knockOver(vx, vy, vz) {
+    this.knock = { t: 0, vx, vy, vz, phase: 'fly' }
+    this.vy = vy
+  }
+
+  updateHealth(dt) {
+    const now = performance.now() / 1000
+    if (!this.dead && this.health < 50 && now - this.lastHurt > 5) this.health = Math.min(50, this.health + dt * 4)
+  }
+
   setEnabled(on) {
     this.collider.setEnabled(on)
   }
@@ -68,6 +128,8 @@ export class Player {
   // input: { x: -1..1 strafe (right +), y: -1..1 forward, sprint, run, jump }, camYaw = camera heading
   updateFoot(dt, input, camYaw) {
     const c = this.char
+    this.updateHealth(dt)
+    if (this.dead || this.knock) return this.updateDown(dt)
     // movement relative to the camera
     const len = Math.min(1, Math.hypot(input.x, input.y))
     const fx = Math.sin(camYaw), fz = Math.cos(camYaw)
@@ -79,21 +141,27 @@ export class Player {
     mz /= ml
     // Gait + stamina: sprint drains the bar; when it's empty you can only run until it refills
     const moving = len > 0.05
-    const wantSprint = input.sprint && moving
+    this.aiming = !!input.aim
+    const wantSprint = input.sprint && moving && !this.aiming
     if (wantSprint && !this.tired) {
       this.stamina -= dt / SPRINT_TIME
       if (this.stamina <= 0) { this.stamina = 0; this.tired = true }
     } else this.stamina = Math.min(1, this.stamina + dt / (moving ? 6 : 3.5))
     if (this.tired && this.stamina > 0.35) this.tired = false
     this.sprinting = wantSprint && !this.tired
-    const gait = this.sprinting ? SPRINT : input.sprint || input.run ? RUN : WALK
+    const gait = this.aiming ? WALK * 1.1 : this.sprinting ? SPRINT : input.sprint || input.run ? RUN : WALK
     const target = moving ? gait * (input.run || input.sprint ? Math.max(len, 0.85) : len) : 0
     this.speed = damp(this.speed, target, target > this.speed ? (this.sprinting ? 5 : 8) : 12, dt)
-    if (len > 0.05) {
+    if (this.aiming || this.faceYaw !== undefined) {
+      // aiming: face where the camera looks and strafe
+      const want = this.faceYaw ?? camYaw
+      this.heading += angleDelta(this.heading, want) * Math.min(1, dt * 18)
+    } else if (len > 0.05) {
       const want = Math.atan2(mx, mz)
       this.heading += angleDelta(this.heading, want) * Math.min(1, dt * 12)
     }
-    const hx = Math.sin(this.heading), hz = Math.cos(this.heading)
+    const strafe = this.aiming || this.faceYaw !== undefined
+    const hx = strafe ? (len > 0.05 ? mx : 0) : Math.sin(this.heading), hz = strafe ? (len > 0.05 ? mz : 0) : Math.cos(this.heading)
     // gravity + jump
     if (this.grounded && input.jump) {
       this.vy = 6.2
@@ -105,7 +173,10 @@ export class Player {
     this.controller.computeColliderMovement(this.collider, desired, this.physics.RAPIER.QueryFilterFlags.EXCLUDE_SENSORS)
     const mv = this.controller.computedMovement()
     const wasGrounded = this.grounded
+    const fallSpeed = this.vy
     this.grounded = this.controller.computedGrounded()
+    // landing hard hurts
+    if (!wasGrounded && this.grounded && fallSpeed < -15) this.damage((-fallSpeed - 15) * 7, null, 'fall')
     if (this.grounded && this.vy < 0) this.vy = -1
     const t = this.body.translation()
     const nx = t.x + mv.x, ny = t.y + mv.y, nz = t.z + mv.z
@@ -141,6 +212,55 @@ export class Player {
     }
   }
 
+  // Knocked over or out cold: ballistic tumble with the character controller, then lie / get up
+  updateDown(dt) {
+    const c = this.char
+    const k = this.knock
+    let mvx = 0, mvz = 0
+    if (k && k.phase === 'fly') {
+      k.t += dt
+      mvx = k.vx
+      mvz = k.vz
+      c.tumble = 1
+      c.spin += dt * 9
+      k.vx *= 1 - Math.min(1, dt * 0.6)
+      k.vz *= 1 - Math.min(1, dt * 0.6)
+    } else {
+      c.tumble = 0
+      c.spin = 0
+    }
+    this.vy -= 22 * dt
+    if (this.grounded && this.vy < -2) this.vy = -2
+    this.controller.computeColliderMovement(this.collider, { x: mvx * dt, y: this.vy * dt, z: mvz * dt }, this.physics.RAPIER.QueryFilterFlags.EXCLUDE_SENSORS)
+    const mv = this.controller.computedMovement()
+    this.grounded = this.controller.computedGrounded()
+    if (this.grounded && this.vy < 0) this.vy = -1
+    const t = this.body.translation()
+    this.body.setNextKinematicTranslation({ x: t.x + mv.x, y: t.y + mv.y, z: t.z + mv.z })
+    this.pos.set(t.x + mv.x, t.y + mv.y - 0.95, t.z + mv.z)
+    this.vel.set(mv.x / dt, mv.y / dt, mv.z / dt)
+    this.speed = 0
+    if (k) {
+      if (k.phase === 'fly' && k.t > 0.25 && this.grounded) { k.phase = 'lie'; k.t = 0 }
+      else if (k.phase === 'lie') {
+        k.t += dt
+        c.lie = Math.min(1, k.t * 4)
+        if (k.t > 1.4 && !this.dead) { k.phase = 'up'; k.t = 0 }
+      } else if (k.phase === 'up') {
+        k.t += dt
+        c.lie = Math.max(0, 1 - k.t / 0.6)
+        if (k.t > 0.6) { this.knock = null; c.lie = 0 }
+      }
+    } else if (this.dead) c.lie = Math.min(1, (c.lie || 0) + dt * 2.5)
+    c.x = this.pos.x
+    c.y = this.pos.y
+    c.z = this.pos.z
+    c.heading = this.heading
+    c.walk = c.run = c.sprint = 0
+    c.drive = c.ride = c.sit = 0
+    c.visible = true
+  }
+
   // Seat the character in a vehicle (pose follows the vehicle each frame)
   updateSeated(vehicleObj, dt) {
     const c = this.char
@@ -150,6 +270,7 @@ export class Player {
     const seat = holder.localToWorld(vehicleObj.seat.clone())
     c.x = seat.x
     c.y = seat.y - (vehicleObj.type === 'bike' ? 0.62 : 0.5)
+    this.updateHealth(dt)
     c.z = seat.z
     const e = new THREE.Euler().setFromQuaternion(g.quaternion, 'YXZ')
     c.heading = e.y
@@ -159,9 +280,8 @@ export class Player {
     c.lean = vehicleObj.type === 'bike' ? vehicleObj.visual.leanAngle : 0
     c.pitch = vehicleObj.type === 'bike' ? -(vehicleObj.phys.wheelie || 0) : 0
     c.steer = clamp((vehicleObj.phys.steer || 0) * 2, -1, 1)
-    c.visible = true
+    c.visible = vehicleObj.type !== 'tank' // the tank crew sits inside the hull
     this.pos.set(c.x, c.y, c.z)
-    void dt
   }
 
   // Find a free spot beside a vehicle to step out

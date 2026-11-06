@@ -498,7 +498,7 @@ export class People {
       seen++
       if (c.fights) continue // gang members and police don't run
       const cur = c.reaction?.type
-      if (cur === 'flee' || cur === 'cower' || cur === 'down' || cur === 'knock') continue
+      if (cur === 'flee' || cur === 'cower' || cur === 'down' || cur === 'knock' || cur === 'stagger') continue
       this.releaseTasks(c)
       const d = Math.sqrt(d2)
       const rnd = Math.random()

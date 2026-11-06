@@ -243,6 +243,16 @@ export class Aviation {
     }
   }
 
+  // Shot / caught in a blast: the plane trails smoke for a while
+  damage(body, amount) {
+    const p = this.planes.find((q) => q.body === body)
+    if (p) p.smoke = Math.min(40, (p.smoke || 0) + amount * 0.2)
+  }
+
+  blast(pos, r) {
+    for (const p of this.planes) if (p.pos.distanceTo(pos) < r + 12) p.smoke = 40
+  }
+
   // Distance along the path to the first obstacle inside the wingspan corridor
   obstacleAhead(p) {
     const obs = this.obstacles

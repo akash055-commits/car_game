@@ -10,6 +10,8 @@ import { formatTime } from './gameplay/Circuit.js'
 import { SEASONS } from './atmosphere/Seasons.js'
 import { saveQuality } from './core/Quality.js'
 import { Minimap } from './ui/Minimap.js'
+import { CombatHud } from './ui/CombatHud.js'
+import { WEAPONS, WEAPON_BY_ID } from './combat/Weapons.js'
 import { ACTIVITY_INFO } from './gameplay/Activities.js'
 
 const app = document.getElementById('app')
@@ -47,9 +49,20 @@ game
 
 let started = false
 let minimap = null
+let hud = null
 function wire() {
   const listener = () => game.camera.position
   const dist = (x, z) => Math.hypot(x - listener().x, z - listener().z)
+  // stereo pan of a world point relative to the camera (-1 left .. 1 right)
+  const pan = (x, z) => {
+    const e = game.camera.matrixWorld.elements
+    const dx = x - listener().x, dz = z - listener().z
+    const l = Math.hypot(dx, dz) || 1
+    return Math.max(-1, Math.min(1, (dx * e[0] + dz * e[2]) / l)) * Math.min(1, l / 6)
+  }
+  const fade = document.createElement('div')
+  fade.className = 'fade-black'
+  ui.hud.prepend(fade) // under the HUD so the big message stays readable
   ui.on('start', () => {
     if (started) return
     started = true
@@ -58,6 +71,7 @@ function wire() {
     game.start()
     if (game.quality.isTouch) game.touch = new TouchControls(game.input, game.rig, game.renderer.renderer.domElement)
     minimap = new Minimap(ui.hud, game)
+    hud = new CombatHud(ui.hud)
     setTimeout(() => ui.toast(`Welcome to Maple Hollow · <em>${SEASONS[game.seasons.current].label}</em>`), 900)
     setTimeout(() => ui.toast('Press <kbd>J</kbd> for activities · <kbd>F</kbd> to get out and walk', { duration: 4200 }), 3600)
   })
@@ -142,7 +156,8 @@ function wire() {
     ui.toast('All embers found. The valley glows for you ✦', { big: true, duration: 5000 })
   })
   game.on('openActivities', () => ui.openActivities(game.activities))
-  game.on('prompt', (active, near, start, jack) => {
+  game.on('prompt', (active, near, start, jack, shop) => {
+    if (shop) return ui.prompt('G', 'Bullseye Arms: buy ammo & armour')
     if (start) return ui.prompt('G', `Start ${ACTIVITY_INFO[start.id].name}`)
     if (active?.type === 'heli' && (active.phys.state === 'off' || active.phys.state === 'stopping')) return ui.prompt('I', 'Start the engine')
     if (active?.type === 'heli' && active.phys.state === 'running' && active.phys.grounded && Math.abs(active.phys.speed) < 1) return ui.prompt('F', 'Get out · I to shut down')
@@ -194,6 +209,97 @@ function wire() {
       ui.toast(`The <em>${site.name}</em> is finished! Everyone cheers`, { duration: 3200 })
     }
   })
+
+  // ---------------------------------------------------------------- combat
+  const C = game.combat
+  const SOUND = { pistol: 'pistol', smg: 'smg', shotgun: 'shotgun', rifle: 'rifle', sniper: 'sniper', rocket: 'rocket' }
+  let lastImpact = 0
+  C.on('shot', (w, o, owner) => {
+    if (w.id === 'rocket') audio.sfx?.rocketLaunch(dist(o.x, o.z), pan(o.x, o.z))
+    else audio.sfx?.gunshot(SOUND[w.id] || 'pistol', dist(o.x, o.z), pan(o.x, o.z))
+    if (owner === 'player' && w.id !== 'rocket') audio.sfx?.casing()
+  })
+  C.on('explosion', (p, size) => audio.sfx?.explosion(dist(p.x, p.z), pan(p.x, p.z), size))
+  C.on('impact', (p, material) => {
+    const now = performance.now()
+    if (now - lastImpact < 40) return
+    lastImpact = now
+    audio.sfx?.bulletHit(material, dist(p.x, p.z))
+  })
+  C.on('hitChar', (c, downed, owner) => {
+    if (owner === 'player') hud?.hitMarker(downed)
+    audio.sfx?.bulletHit('flesh', dist(c.x, c.z))
+  })
+  C.on('hitVehicle', (c, owner) => { if (owner === 'player') hud?.hitMarker(false) })
+  C.on('reload', () => audio.sfx?.reload())
+  C.on('empty', (w) => {
+    audio.sfx?.emptyClick()
+    ui.toast(`Out of ammo for the ${w.name}. Buy more at Bullseye Arms (orange G on the map)`, { duration: 2200 })
+  })
+  C.on('switch', () => audio.sfx?.click())
+  C.on('punch', (hit) => audio.sfx?.punch(hit))
+  C.on('whiz', (o) => audio.sfx?.bulletWhiz(pan(o.x, o.z)))
+  C.on('notice', (t) => ui.toast(t, { duration: 1800 }))
+  C.on('vehicleWrecked', (v) => { if (game.active === v || game.lastVehicle === v) ui.toast(`Your ${v.name.toLowerCase()} is a burnt-out wreck`, { duration: 2400 }) })
+  let lastHurtSound = 0
+  game.player.on('hurt', (amount, from) => {
+    let ang = null
+    if (from) {
+      const e = game.camera.matrixWorld.elements
+      const fx = -e[8], fz = -e[10] // camera forward
+      const dx = from.x - game.player.pos.x, dz = from.z - game.player.pos.z
+      ang = Math.atan2(dx * -fz + dz * fx, dx * fx + dz * fz) // + = to the right
+    }
+    hud?.hurt(ang)
+    if (performance.now() - lastHurtSound > 450) { lastHurtSound = performance.now(); audio.sfx?.hurt() }
+  })
+  game.on('knockedOut', () => {
+    fade.classList.add('on')
+    audio.sfx?.stinger(false)
+    hud?.big('KNOCKED OUT', 'Patched up at the nearest hospital…', 0, 'bad')
+  })
+  game.on('arrested', () => {
+    fade.classList.add('on')
+    audio.sfx?.stinger(false)
+    hud?.big('ARRESTED', 'Released from the police station…', 0, 'blue')
+  })
+  game.on('revived', (place, fee, arrested) => {
+    fade.classList.remove('on')
+    hud?.hideBig()
+    ui.toast(arrested ? `Released with a <em>${fee}</em> coin fine (and half your ammo confiscated)` : `Hospital bill: <em>${fee}</em> coins`, { duration: 3200 })
+    ui.setCoins(game.activities.coins, true)
+  })
+  game.on('pickup', (kind) => {
+    audio.sfx?.pickup()
+    ui.toast({ health: '+ Health', armor: '+ Body armour', ammo: '+ Ammo', rocket: '+ 3 rockets', nitro: 'Nitro refilled' }[kind], { duration: 1300 })
+  })
+  game.on('ejected', () => ui.toast('Thrown off the bike!', { duration: 1600 }))
+  game.on('sprayed', (s, v) => {
+    audio.sfx?.whoosh()
+    ui.toast(`<em>Spray & Fix</em>: your ${v.name.toLowerCase()} is good as new`, { duration: 2400 })
+  })
+  game.on('openShop', () => {
+    const items = [
+      ...WEAPONS.filter((w) => !w.melee).map((w) => ({ id: w.id, name: `${w.icon} ${w.name} ammo`, desc: `+${w.clip * (w.id === 'rocket' ? 3 : 3)} rounds`, price: w.price })),
+      { id: 'armor', name: '🦺 Body armour', desc: 'Soaks up two thirds of the damage you take', price: 30 },
+      { id: 'all', name: '🧰 Full refill', desc: 'Every weapon back to a full load', price: 160 },
+    ]
+    ui.openShop('Bullseye Arms', items, game.activities.coins, (id) => {
+      const it = items.find((i) => i.id === id)
+      if (!it || game.activities.coins < it.price) return false
+      game.activities.coins -= it.price
+      if (id === 'armor') game.player.armor = 100
+      else if (id === 'all') C.refillAll()
+      else C.addAmmo(id, WEAPON_BY_ID[id].clip * 3)
+      game.activities.save()
+      ui.setCoins(game.activities.coins, true)
+      audio.sfx?.coin(1)
+      return game.activities.coins
+    })
+  })
+  game.on('wheelOpen', () => hud?.openWheel(C))
+  game.on('wheelClose', () => { if (hud?.wheelOpen) C.select(hud.closeWheel()) })
+  window.addEventListener('mousemove', (e) => { if (hud?.wheelOpen) hud.moveWheel(e.movementX, e.movementY, C) })
 
   // Activities
   const fmtCoins = (n) => `<em>+${n}</em> coins`
@@ -247,6 +353,7 @@ function wire() {
   const heli = game.vehicles.find((v) => v.type === 'heli')
   game.on('frame', (dt) => {
     ui.update(game)
+    hud?.update(game)
     minimap?.draw()
     game.touch?.setMode(game.active ? game.active.type : 'foot')
     if (!audio.ctx) return

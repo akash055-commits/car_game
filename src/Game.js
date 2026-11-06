@@ -38,6 +38,8 @@ import { Aviation } from './aviation/Aviation.js'
 import { CameraRig } from './vehicle/CameraRig.js'
 import { Effects } from './vehicle/Effects.js'
 import { Collectibles } from './gameplay/Collectibles.js'
+import { Combat } from './combat/Combat.js'
+import { Pickups } from './combat/Pickups.js'
 import { Activities } from './gameplay/Activities.js'
 
 const nextFrame = () => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)))
@@ -194,6 +196,12 @@ export class Game {
     this.rig = new CameraRig(this.camera, this.renderer.renderer.domElement, this.physics)
     this.input = new Input()
     this.input.enabled = false
+    this.input.attachMouse(this.renderer.renderer.domElement)
+    this.combat = new Combat(this)
+    this.pickups = new Pickups(this.scene, this.layout, this.town)
+    // left click shoots (cursor aim) in the overhead view whenever a shot is possible
+    this.rig.fireButton = (button) => button === 0 && this.started && (this.combat.canShoot() || this.active?.type === 'tank')
+    this.rig.wheelLocked = () => !this.active && this.rig.mode === 'third'
     this.wireEvents()
 
     // Warm up: settle physics, compile shaders, bake the environment map
@@ -223,6 +231,10 @@ export class Game {
         this.lastShakeStrength = strength
       }
       if (isCar && strength > 0.18) this.activities.bump()
+      // crashes hurt the vehicle; a hard crash throws you off a motorbike
+      const a = this.active
+      if (isCar && a && strength > 0.15 && !this.combat.burning.has(a)) this.combat.damageVehicle(a, strength * (a.type === 'tank' ? 20 : 220), null, 'crash')
+      if (isCar && a?.type === 'bike' && strength > 0.32 && Math.abs(a.phys.speed) > 11) this.ejectFromBike(a)
       if (isCar && other?.kind === 'traffic' && strength > 0.03) {
         const h = t1?.kind === 'traffic' ? h1 : h2
         const col = this.physics.world.getCollider(h)
@@ -234,6 +246,7 @@ export class Game {
       }
       this.emit('impact', { force, strength: isCar ? strength : clamp(force / 8000, 0, 1), material: other?.material || 'ground', withCar: isCar, kind: other?.kind })
     }
+    this.wireCombat()
     this.collectibles.on('collect', (it, n, total) => {
       this.effects.burst(it.pos, 'sparkle', 34)
       this.emit('collect', n, total)
@@ -250,13 +263,21 @@ export class Game {
       const inHeli = this.active?.type === 'heli'
       if (code === 'KeyF' || (code === 'KeyE' && !inHeli)) this.toggleVehicle()
       if (code === 'KeyI' && inHeli) this.emit('ignition', this.active.phys.ignition())
-      if (code === 'KeyG') this.toggleActivity()
+      if (code === 'KeyG') this.interact()
       if (code === 'KeyJ') this.emit('openActivities')
-      if (code === 'KeyR') this.respawn()
+      if (code === 'KeyR') {
+        if (this.active) this.respawn()
+        else this.combat.reload()
+      }
+      if (code === 'Backspace') this.respawn()
       if (code === 'KeyC') this.emit('camera', this.rig.toggle())
-      if (code === 'Digit1') this.seasons.set('autumn')
-      if (code === 'Digit2') this.seasons.set('spring')
-      if (code === 'Digit3') this.seasons.set('monsoon')
+      // weapons on 1-7, seasons on 8 / 9 / 0
+      const slot = /^Digit([1-7])$/.exec(code)
+      if (slot) this.combat.selectSlot(+slot[1])
+      if (code === 'Digit8') this.seasons.set('autumn')
+      if (code === 'Digit9') this.seasons.set('spring')
+      if (code === 'Digit0') this.seasons.set('monsoon')
+      if (code === 'Tab') this.emit('wheelOpen')
       if (code === 'KeyN') this.toggleNight()
       if (code === 'KeyM') this.emit('toggleMusic')
     })
@@ -265,6 +286,81 @@ export class Game {
   start() {
     this.started = true
     this.input.enabled = true
+  }
+
+  wireCombat() {
+    this.input.on('release', (code) => { if (code === 'Tab') this.emit('wheelClose') })
+    this.input.on('wheel', (dir) => { if (this.started && this.rig.wheelLocked()) this.combat.cycle(dir) })
+    this.input.on('look', (dx, dy) => this.emit('wheelLook', dx, dy))
+    this.traffic.on('explode', (c) => this.combat.explode(c.pos.clone().setY(c.pos.y + 0.8), { radius: 6.5, damage: 180, owner: 'world', size: 1.1 }))
+    this.player.on('dead', (kind) => this.knockedOut(kind))
+    this.pickups.on('collect', (kind, it) => {
+      const p = this.player
+      if (kind === 'health') p.heal(60)
+      else if (kind === 'armor') p.armor = 100
+      else if (kind === 'ammo') { for (const id of ['pistol', 'smg', 'shotgun', 'rifle', 'sniper']) this.combat.addAmmo(id, { pistol: 36, smg: 60, shotgun: 12, rifle: 60, sniper: 5 }[id]) }
+      else if (kind === 'rocket') this.combat.addAmmo('rocket', 3)
+      else if (kind === 'nitro' && this.active) this.active.phys.nitro = 1
+      this.emit('pickup', kind, it)
+    })
+  }
+
+  // G: start an activity / mission, open a gun shop, or quit what you're doing
+  interact() {
+    if (!this.active) {
+      const shop = this.nearPlace(this.town.gunShops, 4.5)
+      if (shop) return this.emit('openShop', shop)
+    }
+    this.toggleActivity()
+  }
+
+  nearPlace(list, r) {
+    const p = this.carPos
+    for (const s of list || []) {
+      const d = s.door || s
+      if ((d.x - p.x) ** 2 + (d.z - p.z) ** 2 < r * r) return s
+    }
+    return null
+  }
+
+  // Health hit zero: fall, fade, wake up at the nearest hospital (or the police station)
+  knockedOut(kind = 'down', arrested = false) {
+    if (this.koTimer) return
+    if (this.active) {
+      const v = this.active
+      v.phys.occupied = false
+      this.player.mode = 'foot'
+      this.player.vehicle = null
+      this.player.setEnabled(true)
+      const spot = this.player.exitSpot(v)
+      this.player.placeAt(spot.x, spot.y, spot.z)
+      this.rig.setKind('foot')
+    }
+    this.player.dead = true
+    this.input.enabled = false
+    this.emit(arrested ? 'arrested' : 'knockedOut', kind)
+    this.koTimer = setTimeout(() => {
+      this.koTimer = null
+      const list = arrested ? this.town.policeStations : this.town.hospitals
+      const p = this.player.pos
+      let best = list[0], bd = Infinity
+      for (const h of list) {
+        const d = (h.door.x - p.x) ** 2 + (h.door.z - p.z) ** 2
+        if (d < bd) { bd = d; best = h }
+      }
+      const out = { x: best.door.x + Math.sin(best.rot) * 3, z: best.door.z + Math.cos(best.rot) * 3 }
+      this.player.revive()
+      this.player.armor = 0
+      this.player.placeAt(out.x, this.layout.getDriveHeight(out.x, out.z) + 0.1, out.z, best.rot)
+      this.rig.yaw = best.rot
+      this.rig.snap()
+      const fee = Math.min(this.activities.coins, Math.round(this.activities.coins * 0.1) + (arrested ? 20 : 10))
+      this.activities.coins -= fee
+      this.activities.save()
+      if (arrested) for (const id of ['smg', 'shotgun', 'rifle', 'sniper', 'rocket']) this.combat.inv[id].ammo = Math.floor(this.combat.inv[id].ammo / 2)
+      this.input.enabled = true
+      this.emit('revived', best, fee, arrested)
+    }, 4500)
   }
 
   // G: start the activity whose marker you're standing / parked in, or quit the current one
@@ -338,6 +434,7 @@ export class Game {
     const t = phys.body.translation(), r = phys.body.rotation()
     v.pos.set(t.x, t.y, t.z)
     v.quat.set(r.x, r.y, r.z, r.w)
+    v.home = { x: t.x, y: t.y - 1.2, z: t.z, heading: new THREE.Euler().setFromQuaternion(v.quat, 'YXZ').y }
     this.vehicles.push(v)
     return v
   }
@@ -353,6 +450,14 @@ export class Game {
     this.physics.world.removeRigidBody(v.phys.body)
     v.visual.group.removeFromParent()
     if (this.lastVehicle === v) this.lastVehicle = null
+  }
+
+  // A burnt-out vehicle: stolen ones vanish, the valley's own vehicles return home repaired
+  recycleVehicle(v) {
+    if (v.stolen) return this.removeVehicle(v)
+    v.phys.reset(v.home)
+    this.combat.repairVehicle(v)
+    this.physics.sync(1)
   }
 
   // Pull a traffic driver out and take the car
@@ -389,6 +494,7 @@ export class Game {
     const p = this.player.pos
     let best = null, bd = Infinity
     for (const v of this.vehicles) {
+      if (v.wrecked) continue
       const d = Math.hypot(v.pos.x - p.x, v.pos.z - p.z) - v.length * 0.35
       if (d < bd && Math.abs(v.pos.y - p.y) < 3) { bd = d; best = v }
     }
@@ -428,6 +534,21 @@ export class Game {
     this.rig.setKind('foot')
     this.rig.yaw = heading
     this.emit('exit', v)
+  }
+
+  // Thrown over the handlebars
+  ejectFromBike(v) {
+    if (!this.active || this.koTimer) return
+    const lv = v.phys.body.linvel()
+    v.phys.occupied = false
+    this.player.mode = 'foot'
+    this.player.vehicle = null
+    this.player.setEnabled(true)
+    this.player.placeAt(v.pos.x, v.pos.y + 0.8, v.pos.z)
+    this.player.knockOver(lv.x * 0.6, 5, lv.z * 0.6)
+    this.player.damage(10 + Math.min(30, Math.hypot(lv.x, lv.z)), null, 'crash')
+    this.rig.setKind('foot')
+    this.emit('ejected', v)
   }
 
   toggleVehicle() {
@@ -537,11 +658,12 @@ export class Game {
       const near = !active ? this.nearbyVehicle() : null
       const start = this.activities.nearStart(this.carPos)
       let jack = null
-      if (!active && !near) {
+      const shop = !active && !start ? this.nearPlace(this.town.gunShops, 4.5) : null
+      if (!active && !near && !shop) {
         const c = this.traffic.nearestDriving(this.player.pos.x, this.player.pos.z, 3.6)
         if (c && c.speed < 7) jack = c
       }
-      this.emit('prompt', active ? active : null, near, start, jack)
+      this.emit('prompt', active ? active : null, near, start, jack, shop)
     }
 
     // Atmosphere
@@ -586,11 +708,18 @@ export class Game {
     this.town.update(this.dayCycle.time, night)
     this.airport.update(elapsed, night, U.uWindDir.value)
     this.aviation.update(Math.min(dt, 0.05), elapsed, [{ x: this.carPos.x, y: this.carPos.y, z: this.carPos.z }])
+    for (const pl of this.aviation.planes) {
+      if (!(pl.smoke > 0)) continue
+      pl.smoke -= dt
+      pl.smokeAcc = (pl.smokeAcc || 0) + dt * 14
+      while (pl.smokeAcc > 1) { pl.smokeAcc -= 1; this.effects.smokeTrail(pl.pos, 1.2, pl.smoke > 30) }
+    }
     // People: threat = the player's vehicle
     const cc = this.crowdCtx.car
     cc.x = this.carPos.x; cc.y = this.carPos.y; cc.z = this.carPos.z
     cc.vx = lv.x; cc.vz = lv.z
     cc.speed = active && (active.type !== 'heli' || active.phys.altitude < 1.5) ? Math.hypot(lv.x, lv.z) : 0
+    cc.heavy = active?.type === 'tank'
     if (!active) {
       // people step aside for the player on foot
       const p = this.player.pos
@@ -614,6 +743,11 @@ export class Game {
     this.crowd.focus.set(this.camera.position.x, 0, this.camera.position.z)
     this.crowd.update(elapsed)
     this.emotes.update(dt)
+    if (this.started) {
+      this.combat.update(Math.min(dt, 0.05), this.input)
+      this.pickups.update(dt, elapsed, this.carPos, active ? active.type : 'foot')
+      this.checkSprayShop(dt)
+    }
     this.activities.update(Math.min(dt, 0.05), elapsed, this.actCtx)
     this.activities.checkWaypoint(this.carPos)
     if (this.started) {
@@ -623,6 +757,22 @@ export class Game {
     this.updateEnvironment()
     this.emit('frame', dt)
     vp.landing = 0
+  }
+
+  // Drive slowly into a Spray & Fix bay: repaired (and, later, a fresh paint job loses the cops)
+  checkSprayShop(dt) {
+    this.sprayCool = Math.max(0, (this.sprayCool || 0) - dt)
+    const v = this.active
+    if (!v || v.type === 'heli' || this.sprayCool > 0 || Math.abs(v.phys.speed) > 4) return
+    for (const s of this.town.sprayShops) {
+      const b = s.bay || s.door
+      if ((b.x - v.pos.x) ** 2 + (b.z - v.pos.z) ** 2 < 6 * 6) {
+        this.sprayCool = 20
+        this.combat.repairVehicle(v)
+        this.emit('sprayed', s, v)
+        return
+      }
+    }
   }
 
   get onFoot() {

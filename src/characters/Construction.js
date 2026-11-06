@@ -363,6 +363,29 @@ export class Construction {
     }
   }
 
+  // An explosion: blow apart nearby pieces of every site within reach
+  blast(x, y, z, r, power = 1) {
+    for (const site of this.sites) {
+      if ((site.x - x) ** 2 + (site.z - z) ** 2 > (r + Math.max(site.W, site.D)) ** 2) continue
+      let broke = 0
+      for (const p of site.pieces) {
+        if (p.state !== 'placed') continue
+        const dx = p.world.x - x, dy = p.world.y - y, dz = p.world.z - z
+        const d = Math.hypot(dx, dy, dz)
+        if (d > r) continue
+        const v = (1 - d / r) * 14 * power
+        this.loosen(site, p, null)
+        p.body.setLinvel({ x: (dx / (d || 1)) * v, y: v * 0.7 + 3, z: (dz / (d || 1)) * v }, true)
+        p.body.setAngvel({ x: (Math.random() - 0.5) * 6, y: (Math.random() - 0.5) * 6, z: (Math.random() - 0.5) * 6 }, true)
+        broke++
+      }
+      if (broke) {
+        this.cascade(site)
+        this.emit('smash', site, broke)
+      }
+    }
+  }
+
   cascade(site) {
     let changed = true
     let guard = 0
