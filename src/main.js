@@ -74,7 +74,8 @@ function wire() {
     hud = new CombatHud(ui.hud)
     window.__hud = hud
     setTimeout(() => ui.toast(`Welcome to Maple Hollow · <em>${SEASONS[game.seasons.current].label}</em>`), 900)
-    setTimeout(() => ui.toast('Press <kbd>J</kbd> for activities · <kbd>F</kbd> to get out and walk', { duration: 4200 }), 3600)
+    setTimeout(() => ui.toast('<kbd>J</kbd> missions &amp; activities · <kbd>Shift</kbd> nitro · <kbd>F</kbd> get out · <kbd>1</kbd>–<kbd>7</kbd> weapons', { duration: 4600 }), 3600)
+    setTimeout(() => ui.toast('New towns: <em>Harbor Bay</em>, <em>Pine Ridge</em>, <em>Dustwater</em> and the tank at <em>Fort Granite</em>. Click the map', { duration: 4600 }), 8600)
   })
 
   // Toolbar / settings

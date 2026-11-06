@@ -330,8 +330,8 @@ export class UI {
     if (mode !== this.hintMode) {
       this.hintMode = mode
       const H = {
-        car: '<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive</span><span><kbd>Space</kbd> drift</span><span><kbd>Shift</kbd>/<kbd>X</kbd> nitro</span><span><kbd>F</kbd> get out</span><span><kbd>C</kbd> camera</span><span><kbd>H</kbd> horn</span>',
-        bike: '<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> ride</span><span><kbd>Shift</kbd>/<kbd>X</kbd> nitro</span><span><kbd>Space</kbd> brake</span><span><kbd>F</kbd> get off</span><span><kbd>C</kbd> camera</span>',
+        car: '<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive</span><span><kbd>Space</kbd> drift</span><span><kbd>Shift</kbd>/<kbd>X</kbd> nitro</span><span>click drive-by</span><span><kbd>F</kbd> get out</span><span><kbd>H</kbd> horn</span>',
+        bike: '<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> ride</span><span><kbd>Shift</kbd>/<kbd>X</kbd> nitro</span><span><kbd>Space</kbd> brake</span><span>click drive-by</span><span><kbd>F</kbd> get off</span>',
         heli: '<span><kbd>I</kbd> engine</span><span><kbd>Space</kbd>/<kbd>Shift</kbd> up / down</span><span><kbd>W</kbd><kbd>S</kbd> pitch</span><span><kbd>A</kbd><kbd>D</kbd> turn</span><span><kbd>Q</kbd><kbd>E</kbd> strafe</span><span><kbd>F</kbd> get out</span>',
         foot: '<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</span><span><kbd>Shift</kbd> sprint</span><span><kbd>F</kbd> enter / steal</span><span>click shoot</span><span>right-click aim</span><span><kbd>1</kbd>–<kbd>7</kbd>/<kbd>Tab</kbd> weapons</span><span><kbd>R</kbd> reload</span>',
         tank: '<span><kbd>W</kbd><kbd>S</kbd> drive</span><span><kbd>A</kbd><kbd>D</kbd> turn</span><span>mouse aim turret</span><span>click fire cannon</span><span>right-click machine gun</span><span><kbd>F</kbd> get out</span>',
@@ -488,19 +488,24 @@ export class UI {
         ${this.isTouch ? '' : `<h3>Controls</h3>
         <div class="keys">
           <span><kbd>W</kbd><kbd>S</kbd></span><span>Throttle / brake &amp; reverse (walk on foot)</span>
-          <span><kbd>A</kbd><kbd>D</kbd></span><span>Steer</span>
-          <span><kbd>Space</kbd></span><span>Handbrake drift · jump · helicopter up</span>
-          <span><kbd>Shift</kbd></span><span>Boost · sprint on foot (watch the stamina bar) · helicopter down</span>
-          <span><kbd>F</kbd></span><span>Get in / out of the buggy, bike or helicopter</span>
+          <span><kbd>A</kbd><kbd>D</kbd></span><span>Steer (pivot the tank)</span>
+          <span><kbd>Space</kbd></span><span>Handbrake drift · bike brake · jump · helicopter up</span>
+          <span><kbd>Shift</kbd> / <kbd>X</kbd></span><span>Nitro (blue bar refills) · sprint on foot · helicopter down</span>
+          <span><kbd>F</kbd></span><span>Get in / out · steal a slow car (or a police car)</span>
+          <span>Left click</span><span>Shoot · tank cannon · drive-by with pistol / SMG (or <kbd>Ctrl</kbd>)</span>
+          <span>Right click</span><span>Aim over the shoulder (sniper scope) · tank machine gun</span>
+          <span><kbd>1</kbd>–<kbd>7</kbd></span><span>Fists, pistol, SMG, shotgun, rifle, sniper, rocket launcher</span>
+          <span><kbd>Tab</kbd> / wheel</span><span>Weapon wheel (hold) / cycle weapons</span>
+          <span><kbd>R</kbd></span><span>Reload on foot · reset vehicle when driving</span>
+          <span><kbd>Backspace</kbd></span><span>Back onto the road (on foot)</span>
+          <span><kbd>G</kbd></span><span>Start / quit a mission or activity · Bullseye Arms gun shop</span>
+          <span><kbd>J</kbd></span><span>Missions &amp; activities list</span>
           <span><kbd>I</kbd></span><span>Helicopter engine start / stop</span>
           <span><kbd>Q</kbd><kbd>E</kbd></span><span>Helicopter strafe</span>
-          <span><kbd>G</kbd></span><span>Start / quit an activity at a marker</span>
-          <span><kbd>J</kbd></span><span>Activities list</span>
-          <span>Map</span><span>Click the minimap to enlarge</span>
-          <span><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd></span><span>Autumn / Spring / Monsoon</span>
+          <span>Map</span><span>Click the minimap to see the whole valley</span>
+          <span><kbd>8</kbd><kbd>9</kbd><kbd>0</kbd></span><span>Autumn / Spring / Monsoon</span>
           <span><kbd>N</kbd></span><span>Day / night</span>
           <span><kbd>C</kbd></span><span>Camera</span>
-          <span><kbd>R</kbd></span><span>Reset vehicle</span>
           <span><kbd>M</kbd></span><span>Music on / off</span>
           <span><kbd>H</kbd></span><span>Horn</span>
         </div>`}

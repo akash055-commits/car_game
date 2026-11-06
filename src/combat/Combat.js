@@ -81,8 +81,15 @@ export class Combat {
     for (const fn of this.listeners[n] || []) fn(...a)
   }
 
+  // In a car or on a bike you shoot with a one-handed gun (SMG, else pistol)
   get weapon() {
-    return WEAPON_BY_ID[this.current]
+    const w = WEAPON_BY_ID[this.current]
+    const a = this.game.active
+    if (a && (a.type === 'car' || a.type === 'bike') && !w.driveBy) {
+      if (this.has('smg')) return WEAPON_BY_ID.smg
+      if (this.has('pistol')) return WEAPON_BY_ID.pistol
+    }
+    return w
   }
 
   // ---------------------------------------------------------------- visuals pools
