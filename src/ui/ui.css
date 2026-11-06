@@ -282,6 +282,13 @@ input[type='range']::-moz-range-thumb { width: 16px; height: 16px; border-radius
 .m-foot .tbtn.sprint { grid-row: 2; font-size: 10px; }
 .tbtn.exit { position: absolute; right: 0; top: -70px; width: 56px; height: 56px; font-size: 10px; background: rgba(47, 33, 24, 0.55); color: #fff8ee; }
 .tbtn.engine { font-size: 10px; }
+.tbtn.fire { grid-column: 1; grid-row: 1; background: rgba(214, 69, 47, 0.85); color: #fff; }
+.m-foot .tbtn.fire { position: absolute; right: 170px; bottom: 90px; width: 80px; height: 80px; }
+.m-car .tbtn.fire, .m-bike .tbtn.fire { position: absolute; right: 170px; bottom: 0; font-size: 10px; }
+.tbtn.aim, .tbtn.swap, .tbtn.mg { font-size: 10px; }
+.m-foot .tbtn.aim { position: absolute; right: 170px; bottom: 0; }
+.m-foot .tbtn.swap { position: absolute; right: 64px; top: -70px; width: 56px; height: 56px; }
+.m-tank .tbtn.mg { grid-column: 1; grid-row: 2; }
 
 body.touch-mode .hint, body.touch-mode .now-playing, body.touch-mode .desk-only { display: none !important; }
 body.touch-mode .lap { padding: 9px 12px; min-width: 0; }

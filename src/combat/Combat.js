@@ -225,6 +225,19 @@ export class Combat {
     let t = hit ? hit.timeOfImpact : 500
     const ch = this.castCharacters(o, d, t, 'player')
     if (ch) t = ch.t
+    // touch screens: soft lock onto the nearest person in front of the camera
+    if (g.quality.isTouch && !ch && g.rig.mode !== 'diorama') {
+      let best = null, bs = 0.82
+      for (const c of g.crowd.list) {
+        if (c.isPlayer || c.down || !c.visible || c.hidden || c.drive > 0.5) continue
+        const ex = c.x - o.x, ey = c.y + 1.3 - o.y, ez = c.z - o.z
+        const l = Math.hypot(ex, ey, ez)
+        if (l > 45) continue
+        const dot = (ex * d.x + ey * d.y + ez * d.z) / l
+        if (dot > bs) { bs = dot; best = { c, p: new THREE.Vector3(c.x, c.y + 1.3, c.z), l } }
+      }
+      if (best) return { origin: o.clone(), dir: best.p.clone().sub(o).normalize(), point: best.p, char: best.c, dist: best.l }
+    }
     // in the overhead view, aim at chest height over the ground point
     const point = o.clone().addScaledVector(d, t)
     if (g.rig.mode === 'diorama' && !ch) point.y += 1.0
@@ -273,7 +286,7 @@ export class Combat {
     const pc = g.player.char
     // aiming (right mouse on foot)
     const aiming = onFoot && !g.player.dead && input.aimHeld && !w.melee
-    g.rig.aiming = aiming && g.rig.mode === 'third'
+    g.rig.aiming = (aiming && g.rig.mode === 'third') || g.active?.type === 'tank'
     g.rig.scope = g.rig.aiming && !!w.scope
     const firing = input.fire && this.canShoot()
     if (firing && this.cooldown <= 0 && (w.auto || !this.held)) this.fire()

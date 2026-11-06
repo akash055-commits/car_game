@@ -240,7 +240,7 @@ export class VehiclePhysics {
     const ratio = this.wheelRatio()
     // Clutch slip at low speed lets the engine rev above wheel speed
     const coupled = wheelRpm * ratio
-    const slipRpm = cfg.idle + this.throttle * 2600
+    const slipRpm = cfg.idle + this.throttle * (cfg.slipRpm || 2600)
     let targetRpm = Math.max(coupled, lerp(cfg.idle, slipRpm, smoothstep(12, 0, coupled / 100)))
     if (this.grounded === 0) targetRpm = cfg.idle + this.throttle * (cfg.redline - cfg.idle) // free revving in the air
     if (this.shiftTimer > 0) targetRpm = Math.min(targetRpm, this.rpm)
@@ -326,7 +326,7 @@ export class VehiclePhysics {
       grip *= 1 - wet * 0.22
       if (!front && this.handbrake) grip *= 0.6
       c.setWheelFrictionSlip(i, grip)
-      c.setWheelSideFrictionStiffness(i, !front && this.handbrake ? 0.75 : 1)
+      c.setWheelSideFrictionStiffness(i, cfg.sideFriction ?? (!front && this.handbrake ? 0.75 : 1))
     }
 
     c.updateVehicle(dt)
@@ -353,7 +353,7 @@ export class VehiclePhysics {
       const av = this.body.angvel()
       const dir = forwardSpeed < -0.5 ? -1 : 1
       const want = input.steer * (cfg.turnRate || 0.8) * dir * (1 - smoothstep(4, 14, absSpeed) * 0.45)
-      const ny = av.y + (want - av.y) * Math.min(1, 6 * dt)
+      const ny = av.y + (want - av.y) * Math.min(1, 14 * dt)
       this.body.setAngvel({ x: av.x * (1 - Math.min(1, 3 * dt)), y: ny, z: av.z * (1 - Math.min(1, 3 * dt)) }, true)
       // tracks don't slide sideways much
       const lv2 = this.body.linvel()

@@ -29,6 +29,7 @@ import { DayCycle } from './atmosphere/DayCycle.js'
 import { Particles } from './atmosphere/Particles.js'
 import { VehiclePhysics, CAR, BIKE } from './vehicle/VehiclePhysics.js'
 import { SedanVisual, SEDAN, VAN } from './vehicle/CarVisuals.js'
+import { TANK, TankVisual, TankGunner } from './vehicle/Tank.js'
 import { VehicleVisual } from './vehicle/VehicleVisual.js'
 import { BikeVisual } from './vehicle/BikeVisual.js'
 import { HeliPhysics, HeliVisual } from './vehicle/Helicopter.js'
@@ -183,6 +184,12 @@ export class Game {
     this.addVehicle('bike', 'Motorbike', pineBike, new BikeVisual(this.scene, pineBike, 0x2f6fd8), { seat: new THREE.Vector3(0, 0.78, -0.22), exitSide: 1, width: 1.1, length: 2.0 })
     const harborCar = new VehiclePhysics(this.physics, kerb(405, -25, Math.PI / 2), CAR)
     this.addVehicle('car', 'Buggy', harborCar, new VehicleVisual(this.scene, harborCar), { seat: new THREE.Vector3(0.36, 0.6, -0.38), exitSide: 1, width: 1.9, length: 3.6 })
+    // The tank, parked in Fort Granite's depot
+    const ts = this.town.fort.tankSpawn
+    const tankPhys = new VehiclePhysics(this.physics, { x: ts.x, y: this.layout.getDriveHeight(ts.x, ts.z), z: ts.z, heading: ts.heading }, TANK)
+    const tankVisual = new TankVisual(this.scene, tankPhys)
+    this.tankVehicle = this.addVehicle('tank', 'Tank', tankPhys, tankVisual, { seat: tankVisual.seat, exitSide: 1, width: 3.6, length: 6.6 })
+    this.tank = new TankGunner(this, this.tankVehicle)
     this.player = new Player(this.physics, this.crowd, this.layout, { x: carFrame.x, y: carFrame.y, z: carFrame.z, heading: carFrame.heading })
     this.player.onStep = (k) => {
       const p = this.player.pos
@@ -233,7 +240,11 @@ export class Game {
       if (isCar && strength > 0.18) this.activities.bump()
       // crashes hurt the vehicle; a hard crash throws you off a motorbike
       const a = this.active
-      if (isCar && a && strength > 0.15 && !this.combat.burning.has(a)) this.combat.damageVehicle(a, strength * (a.type === 'tank' ? 20 : 220), null, 'crash')
+      const tnow = performance.now()
+      if (isCar && a && strength > 0.15 && tnow - (a.lastCrash || 0) > 300 && Math.abs(a.phys.speed) > (a.type === 'tank' ? 9 : 3)) {
+        a.lastCrash = tnow
+        this.combat.damageVehicle(a, strength * (a.type === 'tank' ? 25 : 200), null, 'crash')
+      }
       if (isCar && a?.type === 'bike' && strength > 0.32 && Math.abs(a.phys.speed) > 11) this.ejectFromBike(a)
       if (isCar && other?.kind === 'traffic' && strength > 0.03) {
         const h = t1?.kind === 'traffic' ? h1 : h2
@@ -241,7 +252,13 @@ export class Game {
         if (col) {
           this.traffic.rammed(col.parent(), this.emotes, (x, z) => this.emit('honk', x, z))
           const tc = this.traffic.byBody(col.parent())
-          if (tc && strength > 0.25) this.traffic.damage(tc, strength * (this.active?.phys.cfg.heavy ? 400 : 45), null, 'ram')
+          const heavy = this.active?.phys.cfg.heavy
+          if (tc && heavy && strength > 0.04) {
+            // the tank rolls right over cars
+            const dir = this.active.phys.basis().fwd
+            this.traffic.damage(tc, 999, { x: dir.x * 6000, y: 9000, z: dir.z * 6000 }, 'crush')
+            this.emit('crush', tc)
+          } else if (tc && strength > 0.25) this.traffic.damage(tc, strength * 45, null, 'ram')
         }
       }
       this.emit('impact', { force, strength: isCar ? strength : clamp(force / 8000, 0, 1), material: other?.material || 'ground', withCar: isCar, kind: other?.kind })
@@ -291,6 +308,7 @@ export class Game {
   wireCombat() {
     this.input.on('release', (code) => { if (code === 'Tab') this.emit('wheelClose') })
     this.input.on('wheel', (dir) => { if (this.started && this.rig.wheelLocked()) this.combat.cycle(dir) })
+    this.input.on('cycleWeapon', (dir) => this.combat.cycle(dir))
     this.input.on('look', (dx, dy) => this.emit('wheelLook', dx, dy))
     this.traffic.on('explode', (c) => this.combat.explode(c.pos.clone().setY(c.pos.y + 0.8), { radius: 6.5, damage: 180, owner: 'world', size: 1.1 }))
     this.player.on('dead', (kind) => this.knockedOut(kind))
@@ -745,6 +763,7 @@ export class Game {
     this.emotes.update(dt)
     if (this.started) {
       this.combat.update(Math.min(dt, 0.05), this.input)
+      this.tank.update(Math.min(dt, 0.05), this.input)
       this.pickups.update(dt, elapsed, this.carPos, active ? active.type : 'foot')
       this.checkSprayShop(dt)
     }

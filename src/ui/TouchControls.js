@@ -8,10 +8,11 @@
 import { ICONS } from './UI.js'
 
 const LAYOUTS = {
-  foot: [['jump', 'JUMP'], ['sprint', 'SPRINT', ICONS.boost]],
-  car: [['boost', 'BOOST', ICONS.boost], ['gas', 'GAS'], ['drift', 'DRIFT', ICONS.drift], ['exit', 'EXIT']],
-  bike: [['boost', 'BOOST', ICONS.boost], ['gas', 'GAS'], ['drift', 'BRAKE'], ['exit', 'EXIT']],
+  foot: [['jump', 'JUMP'], ['sprint', 'SPRINT', ICONS.boost], ['fire', 'FIRE'], ['aim', 'AIM'], ['swap', 'WEAPON']],
+  car: [['boost', 'NITRO', ICONS.boost], ['gas', 'GAS'], ['drift', 'DRIFT', ICONS.drift], ['exit', 'EXIT'], ['fire', 'SHOOT']],
+  bike: [['boost', 'NITRO', ICONS.boost], ['gas', 'GAS'], ['drift', 'BRAKE'], ['exit', 'EXIT'], ['fire', 'SHOOT']],
   heli: [['up', 'UP'], ['down', 'DOWN'], ['engine', 'ENGINE'], ['exit', 'EXIT']],
+  tank: [['fire', 'CANNON'], ['gas', 'GAS'], ['mg', 'MG'], ['exit', 'EXIT']],
 }
 
 export class TouchControls {
@@ -85,7 +86,7 @@ export class TouchControls {
     const t = this.input.touch
     const sx = this.stickVec.x, sy = this.stickVec.y
     const dead = (v, d) => Math.sign(v) * Math.max(0, Math.abs(v) - d) / (1 - d)
-    if (this.mode === 'car' || this.mode === 'bike') {
+    if (this.mode === 'car' || this.mode === 'bike' || this.mode === 'tank') {
       t.steer = -dead(sx, 0.12)
       t.throttle = Math.max(t.gas ? 1 : 0, sy < -0.25 ? Math.min(1, (-sy - 0.25) / 0.6) : 0)
       t.brake = Math.max(t.brakeBtn ? 1 : 0, sy > 0.3 ? Math.min(1, (sy - 0.3) / 0.6) : 0)
@@ -98,9 +99,11 @@ export class TouchControls {
 
   setMode(mode) {
     if (mode === this.mode) return
+    if (!LAYOUTS[mode]) mode = 'car'
     this.mode = mode
     // clear everything the previous scheme wrote
-    Object.assign(this.input.touch, { steer: 0, throttle: 0, brake: 0, handbrake: false, boost: false, gas: false, brakeBtn: false, run: false, moveX: 0, moveY: 0, jump: false, up: false, down: false })
+    Object.assign(this.input.touch, { steer: 0, throttle: 0, brake: 0, handbrake: false, boost: false, gas: false, brakeBtn: false, run: false, moveX: 0, moveY: 0, jump: false, up: false, down: false, fire: false, aim: false })
+    this.input.touch.active = true
     this.btns.className = `touch-btns m-${mode}`
     this.btns.innerHTML = LAYOUTS[mode].map(([k, label, icon]) => `<div class="tbtn ${k}" data-b="${k}">${icon || ''}<span>${label}</span></div>`).join('')
     this.btns.querySelectorAll('.tbtn').forEach((b) => {
@@ -115,6 +118,9 @@ export class TouchControls {
         if (k === 'sprint') t.boost = down
         if (k === 'up') t.up = down
         if (k === 'down') t.down = down
+        if (k === 'fire') t.fire = down
+        if (k === 'aim' || k === 'mg') t.aim = down
+        if (down && k === 'swap') this.input.emit('cycleWeapon', 1)
         if (down && k === 'exit') this.input.emit('press', 'KeyF')
         if (down && k === 'engine') this.input.emit('press', 'KeyI')
         this.apply()
