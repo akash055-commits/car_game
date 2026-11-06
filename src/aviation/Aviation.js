@@ -172,7 +172,9 @@ export class Aviation {
   }
 
   // ---------------------------------------------------------------- update
-  update(dt, t) {
+  // obstacles: [{ x, y, z }] — the player and their vehicle; planes on the ground stop for them
+  update(dt, t, obstacles = []) {
+    this.obstacles = obstacles
     for (const p of this.planes) this.updatePlane(p, dt)
     this.updateJets(dt, t)
     this.apply(t)
@@ -215,13 +217,49 @@ export class Aviation {
     } else if (p.phase === 'rollout') {
       target = remaining > 120 ? 28 : 9
     } else if (remaining < 12 && p.phase !== 'takeoff') target = Math.min(target, 3)
-    const acc = p.phase === 'takeoff' ? (p.s < 260 ? 5.5 : 4) : p.phase === 'rollout' ? 6 : 2.5
+    // Something on the taxiway / runway ahead? Stop (or abort the take-off roll) and wait.
+    const onGround = p.phase !== 'takeoff' || p.s < 200
+    let braking = false
+    if (onGround) {
+      const gap = this.obstacleAhead(p)
+      if (gap < Infinity) {
+        const stopDist = (p.speed * p.speed) / (2 * 6) + (p.model.kind === 'jet' ? 22 : 12)
+        if (gap < stopDist + 30) {
+          target = Math.min(target, Math.max(0, (gap - (p.model.kind === 'jet' ? 18 : 10)) * 0.4))
+          braking = true
+          if (!p.blocked) {
+            p.blocked = true
+            this.onBlocked?.(p)
+          }
+        }
+      } else p.blocked = false
+    }
+    const acc = braking ? 7 : p.phase === 'takeoff' ? (p.s < 260 ? 5.5 : 4) : p.phase === 'rollout' ? 6 : 2.5
     p.speed += clamp(target - p.speed, -acc * dt, acc * dt)
     p.s += p.speed * dt
     if (p.s >= p.path.total) {
       p.s = p.path.total
       this.next(p)
     }
+  }
+
+  // Distance along the path to the first obstacle inside the wingspan corridor
+  obstacleAhead(p) {
+    const obs = this.obstacles
+    if (!obs || !obs.length || !p.path) return Infinity
+    const half = p.model.kind === 'jet' ? 17 : 8
+    const dir = 1 // s always increases along the path (pushback just faces backwards)
+    const look = Math.max(40, (p.speed * p.speed) / 8 + 40)
+    for (let d = 6; d < look; d += 6) {
+      const s = p.s + d * dir
+      if (s < 0 || s > p.path.total) break
+      const q = p.path.at(s, this._probe || (this._probe = new THREE.Vector3()))
+      for (const o of obs) {
+        if (Math.abs(o.y - q.y) > 6) continue
+        if ((o.x - q.x) ** 2 + (o.z - q.z) ** 2 < half * half) return d
+      }
+    }
+    return Infinity
   }
 
   next(p) {

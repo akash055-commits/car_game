@@ -142,11 +142,12 @@ function wire() {
     ui.toast('All embers found. The valley glows for you ✦', { big: true, duration: 5000 })
   })
   game.on('openActivities', () => ui.openActivities(game.activities))
-  game.on('prompt', (active, near, start) => {
+  game.on('prompt', (active, near, start, jack) => {
     if (start) return ui.prompt('G', `Start ${ACTIVITY_INFO[start.id].name}`)
     if (active?.type === 'heli' && (active.phys.state === 'off' || active.phys.state === 'stopping')) return ui.prompt('I', 'Start the engine')
     if (active?.type === 'heli' && active.phys.state === 'running' && active.phys.grounded && Math.abs(active.phys.speed) < 1) return ui.prompt('F', 'Get out · I to shut down')
-    if (near) return ui.prompt('F', near.type === 'heli' ? 'Fly the helicopter' : near.type === 'bike' ? 'Ride the motorbike' : 'Drive the buggy')
+    if (near) return ui.prompt('F', near.type === 'heli' ? 'Fly the helicopter' : near.type === 'bike' ? `Ride the ${near.name.toLowerCase()}` : near.type === 'tank' ? 'Drive the tank' : `Drive the ${near.name.toLowerCase()}`)
+    if (jack) return ui.prompt('F', jack.kind === 'van' ? 'Steal the van' : 'Steal the car')
     ui.prompt(null)
   })
   game.on('enter', (v) => {
@@ -155,6 +156,19 @@ function wire() {
   })
   game.on('exit', () => audio.sfx?.door(false))
   game.on('notice', (text) => ui.toast(text, { duration: 2200 }))
+  game.on('carjack', (c, v) => {
+    audio.sfx?.door(true)
+    audio.sfx?.voice('angry', 2)
+    ui.toast(`You pulled the driver out and took the <em>${v.name.toLowerCase()}</em>`, { duration: 2400 })
+  })
+  let lastPlaneNote = 0
+  game.on('planeBlocked', (p) => {
+    audio.sfx?.honk(dist(p.pos.x, p.pos.z) * 0.5)
+    if (performance.now() - lastPlaneNote > 15000 && dist(p.pos.x, p.pos.z) < 120) {
+      lastPlaneNote = performance.now()
+      ui.toast('An airliner has stopped for you. Clear the taxiway!', { duration: 2600 })
+    }
+  })
   game.on('ignition', (state) => {
     if (state === 'starting') {
       audio.sfx?.starter()

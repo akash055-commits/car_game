@@ -28,6 +28,7 @@ import { Seasons } from './atmosphere/Seasons.js'
 import { DayCycle } from './atmosphere/DayCycle.js'
 import { Particles } from './atmosphere/Particles.js'
 import { VehiclePhysics, CAR, BIKE } from './vehicle/VehiclePhysics.js'
+import { SedanVisual, SEDAN, VAN } from './vehicle/CarVisuals.js'
 import { VehicleVisual } from './vehicle/VehicleVisual.js'
 import { BikeVisual } from './vehicle/BikeVisual.js'
 import { HeliPhysics, HeliVisual } from './vehicle/Helicopter.js'
@@ -77,6 +78,7 @@ export class Game {
     await nextFrame()
     this.airport = new Airport(this.scene, this.physics, this.layout, this.town)
     this.aviation = new Aviation(this.scene, this.physics, this.layout)
+    this.aviation.onBlocked = (p) => this.emit('planeBlocked', p)
     progress(0.35, 'Lighting the streets')
     this.props = new Props(this.scene, this.physics, this.layout, this.town)
     this.collectibles = new Collectibles(this.scene, this.layout, this.props, this.town)
@@ -130,9 +132,18 @@ export class Game {
       },
       onVoice: (kind, x, z) => this.emit('voice', kind, x, z),
       onHammer: (x, z) => this.emit('hammer', x, z),
+      // run someone over / knock them down: a crime, and they may go down for a while
+      onKnock: (c) => this.emit('knocked', c),
+      onDowned: (c, kind) => this.emit('downed', c, kind),
+      respawn: (c) => this.people.respawnFar(c, this.carPos),
     }
+    this.people.emotes = this.emotes
+    this.people.onVoice = (kind, x, z) => this.emit('voice', kind, x, z)
+    this.people.onDowned = (c, kind) => this.emit('downed', c, kind)
     this.construction = new Construction(this.scene, this.physics, this.layout, this.town, this.crowd, this.quality)
     this.traffic = new Traffic(this.scene, this.physics, this.layout, this.crowd, this.quality)
+    this.traffic.on('honk', (x, z) => this.emit('honk', x, z))
+    this.traffic.on('wrecked', (c, kind) => this.emit('trafficWrecked', c, kind))
     this.construction.on('complete', (site) => this.emit('siteComplete', site))
     this.construction.on('smash', (site, n) => this.emit('siteSmash', site, n))
     this.activities = new Activities(this.scene, this.layout, this.town, this.construction, this.crowd, this.emotes)
@@ -215,7 +226,11 @@ export class Game {
       if (isCar && other?.kind === 'traffic' && strength > 0.03) {
         const h = t1?.kind === 'traffic' ? h1 : h2
         const col = this.physics.world.getCollider(h)
-        if (col) this.traffic.rammed(col.parent(), this.emotes, (x, z) => this.emit('honk', x, z))
+        if (col) {
+          this.traffic.rammed(col.parent(), this.emotes, (x, z) => this.emit('honk', x, z))
+          const tc = this.traffic.byBody(col.parent())
+          if (tc && strength > 0.25) this.traffic.damage(tc, strength * (this.active?.phys.cfg.heavy ? 400 : 45), null, 'ram')
+        }
       }
       this.emit('impact', { force, strength: isCar ? strength : clamp(force / 8000, 0, 1), material: other?.material || 'ground', withCar: isCar, kind: other?.kind })
     }
@@ -316,7 +331,7 @@ export class Game {
   addVehicle(type, name, phys, visual, opts) {
     const v = { type, name, phys, visual, pos: new THREE.Vector3(), quat: new THREE.Quaternion(), ...opts }
     const tmp = new THREE.Quaternion()
-    this.physics.addDynamic(phys.body, (prev, curr, a) => {
+    v.dyn = this.physics.addDynamic(phys.body, (prev, curr, a) => {
       v.pos.set(prev.p.x + (curr.p.x - prev.p.x) * a, prev.p.y + (curr.p.y - prev.p.y) * a, prev.p.z + (curr.p.z - prev.p.z) * a)
       v.quat.set(prev.q.x, prev.q.y, prev.q.z, prev.q.w).slerp(tmp.set(curr.q.x, curr.q.y, curr.q.z, curr.q.w), a)
     })
@@ -324,6 +339,39 @@ export class Game {
     v.pos.set(t.x, t.y, t.z)
     v.quat.set(r.x, r.y, r.z, r.w)
     this.vehicles.push(v)
+    return v
+  }
+
+  // Remove a vehicle completely (stolen cars that are no longer needed)
+  removeVehicle(v) {
+    const i = this.vehicles.indexOf(v)
+    if (i < 0 || v === this.active) return
+    this.vehicles.splice(i, 1)
+    const d = this.physics.dynamics.indexOf(v.dyn)
+    if (d >= 0) this.physics.dynamics.splice(d, 1)
+    if (v.phys.controller) this.physics.world.removeVehicleController(v.phys.controller)
+    this.physics.world.removeRigidBody(v.phys.body)
+    v.visual.group.removeFromParent()
+    if (this.lastVehicle === v) this.lastVehicle = null
+  }
+
+  // Pull a traffic driver out and take the car
+  carjack(c) {
+    const info = this.traffic.carjack(c, this.player.pos)
+    if (!info) return null
+    const cfg = info.kind === 'van' ? VAN : SEDAN
+    const phys = new VehiclePhysics(this.physics, { x: info.x, y: info.y - 0.7, z: info.z, heading: info.heading }, cfg)
+    const visual = new SedanVisual(this.scene, phys, info.kind === 'van' ? 'van' : info.kind, info.color)
+    const v = this.addVehicle('car', info.kind === 'van' ? 'Van' : 'Sedan', phys, visual, { seat: visual.seat, exitSide: 1, width: 2.0, length: 4.2, stolen: true })
+    v.stolenAt = performance.now()
+    // keep at most four stolen cars around: drop the oldest one out of sight
+    const stolen = this.vehicles.filter((k) => k.stolen && k !== v && k !== this.active)
+    if (stolen.length > 3) {
+      stolen.sort((a, b) => a.stolenAt - b.stolenAt)
+      this.removeVehicle(stolen[0])
+    }
+    this.enterVehicle(v)
+    this.emit('carjack', c, v)
     return v
   }
 
@@ -385,7 +433,11 @@ export class Game {
   toggleVehicle() {
     if (this.active) return this.exitVehicle()
     const v = this.nearbyVehicle()
-    if (v) this.enterVehicle(v)
+    if (v) return this.enterVehicle(v)
+    // no parked vehicle nearby: carjack a slow traffic car
+    const p = this.player.pos
+    const c = this.traffic.nearestDriving(p.x, p.z, 3.6)
+    if (c && c.speed < 7) this.carjack(c)
   }
 
   respawn() {
@@ -484,7 +536,12 @@ export class Game {
       this.promptTimer = 0.2
       const near = !active ? this.nearbyVehicle() : null
       const start = this.activities.nearStart(this.carPos)
-      this.emit('prompt', active ? active : null, near, start)
+      let jack = null
+      if (!active && !near) {
+        const c = this.traffic.nearestDriving(this.player.pos.x, this.player.pos.z, 3.6)
+        if (c && c.speed < 7) jack = c
+      }
+      this.emit('prompt', active ? active : null, near, start, jack)
     }
 
     // Atmosphere
@@ -528,7 +585,7 @@ export class Game {
     // Gameplay
     this.town.update(this.dayCycle.time, night)
     this.airport.update(elapsed, night, U.uWindDir.value)
-    this.aviation.update(Math.min(dt, 0.05), elapsed)
+    this.aviation.update(Math.min(dt, 0.05), elapsed, [{ x: this.carPos.x, y: this.carPos.y, z: this.carPos.z }])
     // People: threat = the player's vehicle
     const cc = this.crowdCtx.car
     cc.x = this.carPos.x; cc.y = this.carPos.y; cc.z = this.carPos.z
