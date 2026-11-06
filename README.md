@@ -24,7 +24,7 @@ The live copy lives in [akash055-commits.github.io](https://github.com/akash055-
 | --- | --- |
 | `W` `A` `S` `D` / arrows | Drive / ride / walk (camera-relative on foot) |
 | `Space` | Handbrake drift · jump on foot · helicopter climb |
-| `Shift` | Boost · run on foot · helicopter descend |
+| `Shift` | Boost · sprint on foot (stamina bar) · helicopter descend |
 | `F` (or `E`) | Get in / out of the buggy, motorbike or helicopter |
 | `I` | Helicopter engine start / stop (wait for full rotor speed) |
 | `Q` `E` | Helicopter sideways strafe |
@@ -39,7 +39,7 @@ The live copy lives in [akash055-commits.github.io](https://github.com/akash055-
 | Mouse drag / wheel | Orbit / zoom the camera |
 | Click the minimap | Enlarge to the full town map |
 
-On phones and tablets an on-screen joystick and buttons appear automatically. They change for walking (jump, run), driving (gas, boost, drift) and flying (up, down, engine). Tap the on-screen prompt to get in a vehicle or start an activity; drag on the scene to look around.
+On phones and tablets an on-screen joystick and buttons appear automatically. They change for walking (jump, sprint; push the stick to the edge to run), driving (gas, boost, drift) and flying (up, down, engine). Tap the on-screen prompt to get in a vehicle or start an activity; drag on the scene to look around.
 
 ## What's inside
 
@@ -47,7 +47,7 @@ On phones and tablets an on-screen joystick and buttons appear automatically. Th
 - **People:** more than 200 hand-rigged townsfolk with faces, outfits and animation. They walk the sidewalks with path-finding, wait at crossings, shop at the market, sit on benches, chat, jog and play. They dodge your vehicle, and if you bump one they tumble, get up dizzy and shake a fist (cartoon style).
 - **Builders:** nine construction sites where crews carry materials and hammer homes and shops together piece by piece. Crash into one and the pieces collapse with real physics; the builders sigh and rebuild.
 - **Vehicles:** the buggy (raycast suspension, 5-speed gearbox, drifts), a sport motorbike with lean and balance assist, and a helicopter with start-up and shut-down, collective, altitude hold and coordinated turns. Park it anywhere. Town traffic drives the streets.
-- **On foot:** get out anywhere and walk, run and jump with an eye-level third-person camera.
+- **On foot:** get out anywhere and walk, run, sprint (with stamina) and jump with an eye-level third-person camera.
 - **Airport:** a runway you can drive on, taxiways, a terminal with jet bridges, a control tower, hangars with parked planes and airliners that push back, taxi, take off, fly a circuit and land automatically. Jets with contrails cross the sky overhead.
 - **Activities:** Town Courier (parcels and building supplies against the clock), Town Taxi (pick up waving fares, tips for smooth rides) and Checkpoint Rally (12 hoops, medals). Coins and records are saved.
 - **Seasons and time:** every colour is a shared shader uniform, so seasons blend smoothly. A layered sky with clouds, stars and a moon; the day/night cycle lights windows, street lamps and headlights.
