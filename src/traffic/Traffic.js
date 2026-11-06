@@ -4,7 +4,8 @@
 // honks and shakes a fist before driving on. Drivers are visible townspeople.
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
-import { GRID, WORLD } from '../world/Layout.js'
+import { WORLD } from '../world/Layout.js'
+import { TOWNS, HIGHWAY_LOOPS } from '../world/Regions.js'
 import { makeCharacter } from '../characters/Rig.js'
 import { EMOTE } from '../characters/Emotes.js'
 import { U } from '../world/Uniforms.js'
@@ -63,10 +64,18 @@ export class Traffic {
         .replace('#include <common>', '#include <common>\nuniform float uNight;\nvarying float vLit;')
         .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance = (vLit > 1.5 ? vec3(1.0, 0.15, 0.1) * (0.6 + uNight * 2.0) : vec3(1.0, 0.9, 0.7) * (0.2 + uNight * 3.0)) * step(0.5, vLit);')
     }
-    const count = quality.name === 'low' ? 8 : 14
+    const count = quality.name === 'low' ? 14 : 26
     const loops = this.makeLoops()
+    this.loops = loops
+    // Weighted by length so long loops (the ring highway) get more cars
+    const pickLoop = (i) => {
+      const total = loops.reduce((a, l) => a + Math.sqrt(l.total), 0)
+      let t = ((i + 0.5) / count) * total
+      for (const l of loops) { t -= Math.sqrt(l.total); if (t <= 0) return l }
+      return loops[loops.length - 1]
+    }
     for (let i = 0; i < count; i++) {
-      const loop = loops[i % loops.length]
+      const loop = pickLoop(i)
       const kind = this.rnd.pick(['sedan', 'sedan', 'hatch', 'van'])
       const mesh = new THREE.Mesh(carGeometry(kind, this.rnd.pick(COLORS)), mat)
       mesh.castShadow = true
@@ -78,7 +87,7 @@ export class Traffic {
       const driver = rig.add(makeCharacter(this.rnd, { kind: 'adult' }))
       driver.noReact = true
       driver.drive = 1
-      const car = { kind, mesh, body, driver, loop, s: (i / count) * loop.total * 3 % loop.total + this.rnd.range(0, 20), speed: 0, max: this.rnd.range(8, 11), stopped: 0, honk: 0, pos: new THREE.Vector3(), heading: 0 }
+      const car = { kind, mesh, body, driver, loop, s: this.rnd.range(0, loop.total), speed: 0, max: loop.highway ? this.rnd.range(15, 20) : this.rnd.range(8, 11), stopped: 0, honk: 0, pos: new THREE.Vector3(), heading: 0 }
       this.cars.push(car)
     }
     this._t = new THREE.Vector3()
@@ -87,17 +96,10 @@ export class Traffic {
 
   // Closed lane loops (clockwise around a few blocks + the ring road), driving on the right
   makeLoops() {
-    const rects = [
-      [GRID[0], GRID[0], GRID[7], GRID[7]],
-      [GRID[1], GRID[2], GRID[3], GRID[4]],
-      [GRID[3], GRID[3], GRID[5], GRID[5]],
-      [GRID[2], GRID[4], GRID[4], GRID[6]],
-      [GRID[4], GRID[4], GRID[6], GRID[6]],
-      [GRID[1], GRID[0], GRID[3], GRID[2]],
-      [GRID[5], GRID[0], GRID[7], GRID[2]],
-      [GRID[0], GRID[4], GRID[2], GRID[6]],
-    ]
-    return rects.map(([x0, z0, x1, z1]) => {
+    const rects = []
+    for (const t of TOWNS) for (const [a, b, c, d] of t.loops || []) rects.push([t.xs[a], t.zs[b], t.xs[c], t.zs[d], false])
+    for (const r of HIGHWAY_LOOPS) rects.push([...r, true])
+    return rects.map(([x0, z0, x1, z1, highway]) => {
       // counter-clockwise when viewed from above with +z north => right-hand traffic keeps the block on the left
       const o = LANE
       const corners = [[x0 + o, z0 + o], [x1 - o, z0 + o], [x1 - o, z1 - o], [x0 + o, z1 - o]]
@@ -123,7 +125,7 @@ export class Traffic {
       for (const p of pts) p.y = this.layout.getDriveHeight(p.x, p.z)
       const len = [0]
       for (let i = 1; i <= pts.length; i++) len.push(len[i - 1] + pts[i % pts.length].distanceTo(pts[i - 1]))
-      return { pts, len, total: len[len.length - 1] }
+      return { pts, len, total: len[len.length - 1], highway }
     })
   }
 
@@ -172,7 +174,9 @@ export class Traffic {
       c.heading = Math.atan2(this._t.x, this._t.z)
       c.pos.y = this.layout.getDriveHeight(c.pos.x, c.pos.z)
       c.mesh.position.copy(c.pos)
-      c.mesh.rotation.y = c.heading
+      // pitch with the road on hills
+      const ah = this.layout.getDriveHeight(c.pos.x + fx * 2, c.pos.z + fz * 2), bh = this.layout.getDriveHeight(c.pos.x - fx * 2, c.pos.z - fz * 2)
+      c.mesh.rotation.set(-Math.atan2(ah - bh, 4), c.heading, 0, 'YXZ')
       const q = c.mesh.quaternion
       c.body.setNextKinematicTranslation({ x: c.pos.x, y: c.pos.y, z: c.pos.z })
       c.body.setNextKinematicRotation({ x: q.x, y: q.y, z: q.z, w: q.w })

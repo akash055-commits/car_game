@@ -165,7 +165,7 @@ export class People {
     const nodes = layout.walk.nodes
     const rnd = this.rnd
 
-    const count = quality.name === 'low' ? 55 : 110
+    const count = quality.name === 'low' ? 90 : 170
     for (let i = 0; i < count; i++) {
       const n = nodes[Math.floor(rnd.random() * nodes.length)]
       const c = rig.add(makeCharacter(rnd))
@@ -265,8 +265,9 @@ export class People {
 
   pickDestination(c) {
     const nodes = this.layout.walk.nodes
+    const pool = this.layout.walk.byTown[nodes[c.node]?.town] || nodes.map((n) => n.id)
     for (let tries = 0; tries < 6; tries++) {
-      const goal = Math.floor(this.rnd.random() * nodes.length)
+      const goal = pool[Math.floor(this.rnd.random() * pool.length)]
       if (goal === c.node) continue
       const path = this.layout.findPath(c.node, goal)
       if (path && path.length > 1 && path.length < 40) {
@@ -326,9 +327,20 @@ export class People {
     this.pickDestination(c)
   }
 
+  // People far from the player think less often (every 4th frame, with the saved-up time)
   update(dt, time, ctx) {
-    for (const c of this.walkers) this.updateWalker(c, dt, time, ctx)
-    for (const c of this.others) this.updateOther(c, dt, time, ctx)
+    this.frame = (this.frame || 0) + 1
+    const px = ctx.car.x, pz = ctx.car.z
+    const far2 = 220 * 220
+    const step = (c, fn) => {
+      c.simAcc = (c.simAcc || 0) + dt
+      if ((c.x - px) ** 2 + (c.z - pz) ** 2 > far2 && !c.reaction && ((this.frame + c.index) & 3) !== 0) return
+      const d = Math.min(c.simAcc, 0.2)
+      c.simAcc = 0
+      fn.call(this, c, d, time, ctx)
+    }
+    for (const c of this.walkers) step(c, this.updateWalker)
+    for (const c of this.others) step(c, this.updateOther)
   }
 
   updateWalker(c, dt, time, ctx) {

@@ -2,14 +2,21 @@
 // drifting ripples, sun glints and rain rings.
 import * as THREE from 'three'
 import { WORLD, terrainGLSL } from './Layout.js'
+import { SEA_X } from './Regions.js'
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { U, noiseGLSL } from './Uniforms.js'
 
 export class Water {
   constructor(scene) {
-    // Covers the park lake, the stream from the north and the river to the east
-    const minX = 52, maxX = 350, minZ = -72, maxZ = 350
-    const geo = new THREE.PlaneGeometry(maxX - minX, maxZ - minZ, 1, 1).rotateX(-Math.PI / 2)
-    geo.translate((minX + maxX) / 2, WORLD.waterLevel, (minZ + maxZ) / 2)
+    // Covers the park lake, the stream from the north, the river through Harbor Bay and
+    // the sea along the east coast (the shader discards wherever the ground is dry)
+    const rects = [[52, 350, -72, 365], [330, WORLD.half, -132, -60], [SEA_X - 40, WORLD.half, -WORLD.half, WORLD.half]]
+    const geos = rects.map(([minX, maxX, minZ, maxZ]) => {
+      const g = new THREE.PlaneGeometry(maxX - minX, maxZ - minZ, 1, 1).rotateX(-Math.PI / 2)
+      g.translate((minX + maxX) / 2, WORLD.waterLevel, (minZ + maxZ) / 2)
+      return g
+    })
+    const geo = mergeGeometries(geos)
 
     this.material = new THREE.ShaderMaterial({
       transparent: true,

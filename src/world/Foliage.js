@@ -2,6 +2,8 @@
 // giving soft, fluffy crowns. Colours come from the season palette per tree, so
 // switching season recolours every tree without touching geometry.
 import * as THREE from 'three'
+import { settlementRects } from './Regions.js'
+import { WORLD } from './Layout.js'
 import { U, occlusionGLSL } from './Uniforms.js'
 import { makeRandom } from '../core/math.js'
 
@@ -158,12 +160,20 @@ export class Foliage {
     const park = town?.park
     const inPark = (x, z) => park && x > park.ix0 && x < park.ix1 && z > park.iz0 && z < park.iz1
     let attempts = 0
-    while (trees.length < 620 && attempts < 40000) {
+    const lim = WORLD.half - 25
+    const towns = settlementRects()
+    const inTown = (x, z) => towns.some((t) => x > t.x0 - 4 && x < t.x1 + 4 && z > t.z0 - 4 && z < t.z1 + 4)
+    const maxTrees = quality.name === 'low' ? 900 : 1300
+    while (trees.length < maxTrees && attempts < 90000) {
       attempts++
-      const x = rnd.range(-340, 340), z = rnd.range(-340, 340)
+      const x = rnd.range(-lim, lim), z = rnd.range(-lim, lim)
       const rr = Math.max(Math.abs(x), Math.abs(z))
       const grove = layout.n2(x * 0.03 + 20, z * 0.03) * 0.5 + 0.5
-      const chance = rr > 186 ? (grove > 0.4 ? 0.8 : 0.3) : inPark(x, z) ? (grove > 0.45 ? 0.6 : 0.25) : rr > 178 ? 0.3 : 0.05
+      const desert = layout.desertK(x, z)
+      const forest = z > 330 ? 1.25 : 1 // pine forests on the way up to Pine Ridge
+      let chance = rr > 186 ? (grove > 0.4 ? 0.8 : 0.3) * forest : inPark(x, z) ? (grove > 0.45 ? 0.6 : 0.25) : rr > 178 ? 0.3 : 0.05
+      if (rr > 186 && inTown(x, z)) chance = 0.06
+      chance *= 1 - desert * 0.9
       if (rnd.random() > chance) continue
       const r = rnd.range(1.6, 2.7)
       if (!layout.isFree(x, z, 1.4, { roadMargin: 1.8 })) continue
@@ -173,9 +183,9 @@ export class Foliage {
       layout.occupy(x, z, 1.3)
     }
     attempts = 0
-    while (bushes.length < 260 && attempts < 12000) {
+    while (bushes.length < (quality.name === 'low' ? 380 : 560) && attempts < 30000) {
       attempts++
-      const x = rnd.range(-330, 330), z = rnd.range(-330, 330)
+      const x = rnd.range(-lim, lim), z = rnd.range(-lim, lim)
       if (!layout.isFree(x, z, 0.9, { roadMargin: 1.0 })) continue
       const y = layout.getHeight(x, z)
       if (y < -0.1) continue

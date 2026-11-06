@@ -84,14 +84,15 @@ export class Game {
 
     progress(0.45, 'Planting trees')
     this.foliage = new Foliage(this.scene, this.physics, this.layout, this.quality, this.town)
-    const { heightTex, groundTex, roadTex } = this.layout.createTextures()
+    const { heightTex, groundTex, roadTex, roadTex2 } = this.layout.createTextures()
     U.uHeightTex.value = heightTex
     U.uGroundTex.value = groundTex
     U.uRoadTex.value = roadTex
+    U.uRoadTex2.value = roadTex2
     await nextFrame()
 
     progress(0.6, 'Painting the ground')
-    this.terrain = new Terrain(this.scene, this.layout)
+    this.terrain = new Terrain(this.scene, this.layout, this.quality)
     buildTerrainPhysics(this.physics, this.layout)
     this.water = new Water(this.scene)
     this.grass = new Grass(this.scene, this.quality)
@@ -115,7 +116,7 @@ export class Game {
     await nextFrame()
 
     progress(0.8, 'Waking up the townsfolk')
-    this.crowd = new CrowdRig(this.scene, 220)
+    this.crowd = new CrowdRig(this.scene, 460)
     this.emotes = new Emotes(this.scene, 90)
     this.people = new People(this.crowd, this.layout, this.town, this.props, this.quality)
     this.people.setBenches(this.props.benches)
@@ -158,6 +159,17 @@ export class Game {
     const hp = AIRPORT.helipad
     const heli = new HeliPhysics(this.physics, { x: hp.x, y: this.layout.getHeight(hp.x, hp.z) + 0.1, z: hp.z, heading: 0 })
     this.addVehicle('heli', 'Helicopter', heli, new HeliVisual(this.scene, heli), { seat: new THREE.Vector3(0.38, 0.95, 0.75), exitSide: 1, width: 2.2, length: 9 })
+    // More rides parked around the valley (kerbside, off the traffic loops)
+    const kerb = (x, z, h, side = 2.4) => {
+      const f = this.frameNear(x, z, h)
+      return { ...f, x: f.x - f.tz * side, z: f.z + f.tx * side, y: this.layout.getDriveHeight(f.x - f.tz * side, f.z + f.tx * side) }
+    }
+    const dirtBike = new VehiclePhysics(this.physics, kerb(-545, -550, Math.PI / 2), BIKE)
+    this.addVehicle('bike', 'Dirt bike', dirtBike, new BikeVisual(this.scene, dirtBike, 0xe8a33a), { seat: new THREE.Vector3(0, 0.78, -0.22), exitSide: 1, width: 1.1, length: 2.0 })
+    const pineBike = new VehiclePhysics(this.physics, kerb(-25, 505, 0), BIKE)
+    this.addVehicle('bike', 'Motorbike', pineBike, new BikeVisual(this.scene, pineBike, 0x2f6fd8), { seat: new THREE.Vector3(0, 0.78, -0.22), exitSide: 1, width: 1.1, length: 2.0 })
+    const harborCar = new VehiclePhysics(this.physics, kerb(405, -25, Math.PI / 2), CAR)
+    this.addVehicle('car', 'Buggy', harborCar, new VehicleVisual(this.scene, harborCar), { seat: new THREE.Vector3(0.36, 0.6, -0.38), exitSide: 1, width: 1.9, length: 3.6 })
     this.player = new Player(this.physics, this.crowd, this.layout, { x: carFrame.x, y: carFrame.y, z: carFrame.z, heading: carFrame.heading })
     this.player.onStep = (k) => {
       const p = this.player.pos
@@ -489,6 +501,7 @@ export class Game {
     this.scene.fog.near = this.dayCycle.fog.near
     this.scene.fog.far = this.dayCycle.fog.far
     this.sky.update(this.camera.position)
+    this.terrain.update(dt, this.camera.position)
     this.particles.update(b, U.uNight.value)
     const g = r.grade.uniforms
     g.uLift.value = [b.lift.x, b.lift.y + U.uNight.value * 0.015, b.lift.z + U.uNight.value * 0.04]

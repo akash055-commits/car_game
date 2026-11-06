@@ -2,8 +2,9 @@
 // airport) drawn rotated with the camera around the player, plus markers for activity
 // starts, the current target, your vehicles and the player arrow. Click to enlarge.
 import { WORLD, AIRPORT } from '../world/Layout.js'
+import { settlementRects, SEA_X } from '../world/Regions.js'
 
-const SCALE = 1.6 // px per metre on the base map
+const SCALE = 1.0 // px per metre on the base map
 
 export class Minimap {
   constructor(root, game) {
@@ -68,8 +69,9 @@ export class Minimap {
       else c.fillStyle = '#e6dccb'
       c.fillRect(P(b.x0), P(b.z0), (b.x1 - b.x0) * SCALE, (b.z1 - b.z0) * SCALE)
     }
-    // water
+    // water (the sea along the east coast too)
     c.fillStyle = '#7cc6d8'
+    c.fillRect(P(SEA_X - 4), 0, size - P(SEA_X - 4), size)
     c.strokeStyle = '#7cc6d8'
     c.lineCap = 'round'
     c.lineJoin = 'round'
@@ -119,6 +121,40 @@ export class Minimap {
       const s = p.kind === 'landmark' ? 14 : 8
       c.fillRect(P(p.x) - (s * SCALE) / 2, P(p.z) - (s * SCALE) / 2, s * SCALE, s * SCALE)
     }
+    // special places: hospital (red cross), police (blue), gun shops (orange), spray shops (green)
+    const icon = (list, col, ch) => {
+      for (const p of list || []) {
+        c.fillStyle = col
+        c.beginPath()
+        c.arc(P(p.x), P(p.z), 7, 0, Math.PI * 2)
+        c.fill()
+        c.fillStyle = '#ffffff'
+        c.font = 'bold 9px Nunito, sans-serif'
+        c.textAlign = 'center'
+        c.textBaseline = 'middle'
+        c.fillText(ch, P(p.x), P(p.z) + 0.5)
+      }
+    }
+    icon(town.hospitals, '#d6452f', '+')
+    icon(town.policeStations, '#3a63c9', 'P')
+    icon(town.gunShops, '#e8742c', 'G')
+    icon(town.sprayShops, '#3f9a5a', 'S')
+    // town names
+    c.font = 'bold 22px Nunito, sans-serif'
+    c.textAlign = 'center'
+    c.textBaseline = 'middle'
+    for (const t of settlementRects()) {
+      const x = P((t.x0 + t.x1) / 2), z = P(t.id === 'fort' ? t.z1 + 34 : t.z0 - 18)
+      c.lineWidth = 5
+      c.strokeStyle = 'rgba(255, 250, 240, 0.85)'
+      c.save()
+      c.translate(x, z)
+      c.rotate(Math.PI) // the big map is shown rotated by 180°, so pre-rotate the labels
+      c.strokeText(t.name.toUpperCase(), 0, 0)
+      c.fillStyle = '#5a3a24'
+      c.fillText(t.name.toUpperCase(), 0, 0)
+      c.restore()
+    }
     return cv
   }
 
@@ -128,10 +164,10 @@ export class Minimap {
     const W = this.canvas.width, H = this.canvas.height
     // Small map: centred on you, rotated so the camera's forward points up.
     // Big map: the whole town + airport, north up.
-    const pos = this.big ? { x: 0, z: -30 } : g.carPos
+    const pos = this.big ? { x: 20, z: -40 } : g.carPos
     const yaw = g.rig.forwardYaw()
     const theta = this.big ? Math.PI : -Math.PI / 2 - Math.atan2(Math.cos(yaw), Math.sin(yaw))
-    const k = this.big ? Math.min(W, H) / (650 * SCALE) : (1.35 * this.dpr) / SCALE
+    const k = this.big ? Math.min(W, H) / (1520 * SCALE) : (1.35 * this.dpr) / SCALE
     c.save()
     c.clearRect(0, 0, W, H)
     c.beginPath()

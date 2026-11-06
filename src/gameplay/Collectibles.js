@@ -14,7 +14,7 @@ function townSpots(layout, props, town) {
   if (town.park) s.push({ x: town.park.playground.x + 2, z: town.park.playground.z })
   if (town.pitch) s.push({ x: town.pitch.x, z: town.pitch.z })
   if (town.yard) s.push({ x: town.yard.pickup.x + 6, z: town.yard.pickup.z + 10 })
-  const gas = town.places.find((p) => p.name === 'Garage')
+  const gas = town.sprayShops?.[0] || town.places.find((p) => p.name === 'Garage')
   if (gas) s.push({ x: gas.door.x, z: gas.door.z + 9 })
   const market = town.places.find((p) => p.name === 'Market')
   if (market) s.push({ x: market.x, z: market.z })
@@ -23,7 +23,14 @@ function townSpots(layout, props, town) {
   for (const [x, z] of [[-146, 10], [146, 30], [20, 146], [-30, -146], [-100, -25], [50, -125], [-125, 50], [75, 100]]) s.push({ x, z })
   const lake = layout.lake
   s.push({ x: lake.x + lake.r + 6, z: lake.z + 8 })
-  return s.slice(0, 25)
+  const base = s.slice(0, 25)
+  // 15 more out in the wider valley
+  for (const name of ['Lighthouse', 'Lookout Point', 'Sawmill', 'Motocross Arena', 'Fort Granite', 'Fish Market', 'Summit Lodge', 'Sundown Motel', 'Harbor Docks']) {
+    const p = town.places.find((q) => q.name === name)
+    if (p) base.push({ x: p.door.x, z: p.door.z })
+  }
+  for (const [x, z] of [[25, 365], [-420, 120], [300, 25], [480, -260], [-300, -420], [-470, -25]]) base.push({ x, z })
+  return base.slice(0, 40)
 }
 
 export class Collectibles {
