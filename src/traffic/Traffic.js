@@ -208,6 +208,8 @@ export class Traffic {
     }
     c.health -= amount
     c.panic = 7
+    // everyday bumps dent cars but never set them on fire
+    if (kind === 'ram') c.health = Math.max(c.health, 20)
     if (c.health > 0) return
     if (c.state === 'burning' && kind === 'bullet') { c.timer += amount * 0.01; return }
     if (kind === 'explosion' || kind === 'crush' || c.state === 'burning') return this.wreck(c, impulse, kind)

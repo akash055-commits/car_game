@@ -273,9 +273,12 @@ export class Combat {
     const g = this.game
     if (g.player.dead || g.player.knock) return false
     const a = g.active
-    if (!a) return true
+    // shooting is deliberate: on foot in the shoulder camera a left click fires; in the
+    // overhead view and from vehicles you hold the right button (aim) and then click
+    const aim = g.input.aimHeld || !!g.input.touch.fire
+    if (!a) return g.rig.mode !== 'diorama' || aim
     if (a.type === 'heli' || a.type === 'tank') return false
-    return !!this.weapon.driveBy
+    return !!this.weapon.driveBy && aim
   }
 
   // ---------------------------------------------------------------- firing (player)

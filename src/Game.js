@@ -216,6 +216,7 @@ export class Game {
     // left click shoots (cursor aim) in the overhead view whenever a shot is possible
     this.rig.fireButton = (button) => button === 0 && this.started && (this.combat.canShoot() || this.active?.type === 'tank')
     this.rig.wheelLocked = () => !this.active && this.rig.mode === 'third'
+    this.rig.rightAims = () => this.started && (!this.active || ['car', 'bike', 'tank'].includes(this.active.type))
     this.wireEvents()
 
     // Warm up: settle physics, compile shaders, bake the environment map
@@ -237,7 +238,13 @@ export class Game {
       const t1 = this.physics.getTag(h1), t2 = this.physics.getTag(h2)
       const isCar = t1?.kind === 'car' || t2?.kind === 'car'
       const other = t1?.kind === 'car' ? t2 : t1
-      const strength = clamp((force - 2000) / 60000, 0, 1)
+      // Only real hits count: resting against something (a parked wreck, a wall) pushes
+      // with large forces but no closing speed, and must not shake / clank / damage
+      const b1 = this.physics.world.getCollider(h1)?.parent(), b2 = this.physics.world.getCollider(h2)?.parent()
+      const v1 = b1 ? b1.linvel() : { x: 0, y: 0, z: 0 }, v2 = b2 ? b2.linvel() : { x: 0, y: 0, z: 0 }
+      const closing = Math.hypot(v1.x - v2.x, v1.y - v2.y, v1.z - v2.z)
+      if (closing < 1.5) return
+      const strength = clamp((force - 2000) / 60000, 0, 1) * clamp((closing - 1.5) / 6, 0, 1)
       const now = performance.now()
       if (isCar && strength > 0.02 && (now - (this.lastShake || 0) > 280 || strength > (this.lastShakeStrength || 0) * 1.5)) {
         this.rig.addShake(strength * 0.9)
