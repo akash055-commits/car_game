@@ -3,6 +3,7 @@
 import * as THREE from 'three'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
 import { WORLD } from './Layout.js'
+import { settlementRects } from './Regions.js'
 import { U } from './Uniforms.js'
 import { makeRandom } from '../core/math.js'
 
@@ -344,10 +345,12 @@ export class Props {
     flat.setAttribute('color', new THREE.BufferAttribute(c, 3))
     const rocks = []
     let tries = 0
-    while (rocks.length < 130 && tries < 8000) {
+    const lim = WORLD.half - 20
+    while (rocks.length < 340 && tries < 20000) {
       tries++
-      const x = rnd.range(-335, 335), z = rnd.range(-335, 335)
+      const x = rnd.range(-lim, lim), z = rnd.range(-lim, lim)
       if (Math.max(Math.abs(x), Math.abs(z)) < 182 && rnd.random() < 0.85) continue
+      if (settlementRects().some((t) => x > t.x0 - 6 && x < t.x1 + 6 && z > t.z0 - 6 && z < t.z1 + 6) && rnd.random() < 0.9) continue
       const sc = rnd.random() < 0.15 ? rnd.range(1.4, 2.6) : rnd.range(0.35, 1.1)
       if (!this.layout.isFree(x, z, sc, { roadMargin: 1.2, allowWater: true })) continue
       const y = this.layout.getHeight(x, z)

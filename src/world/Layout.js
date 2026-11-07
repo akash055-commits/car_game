@@ -4,13 +4,15 @@
 import * as THREE from 'three'
 import { SimplexNoise } from 'three/examples/jsm/math/SimplexNoise.js'
 import { clamp, lerp, smoothstep, makeRandom } from '../core/math.js'
+import { GRID, TOWNS, EXTRA_EDGES, STREAM, RIVER, SEA_X, FORT, settlementRects } from './Regions.js'
 
 export const WORLD = {
-  size: 700,
-  res: 351, // one height sample every 2 m (roads use a separate ~0.33 m texture)
+  size: 1600,
+  res: 801, // one height sample every 2 m (roads use separate street textures)
   cell: 2,
-  half: 350,
-  roadTexHalf: 215, // the street texture only needs to cover the town + airport roads
+  half: 800,
+  roadTexHalf: 215, // fine street texture over Maple Hollow + airport roads
+  roadTexOuterHalf: 800, // coarser street texture over the whole valley
   waterLevel: -0.45,
   roadHalfWidth: 4.0,
   sidewalk: 2.6,
@@ -20,14 +22,8 @@ export const WORLD = {
 const HW = WORLD.roadHalfWidth
 const SW = WORLD.sidewalk
 
-// Street grid lines (x for vertical streets, z for horizontal ones)
-export const GRID = [-175, -125, -75, -25, 25, 75, 125, 175]
-// Road segments removed to make larger blocks (park, industrial yard)
-const REMOVED = new Set(['v:75:-75:-25', 'v:75:-25:25', 'h:-25:25:75', 'h:-25:75:125', 'v:-125:-175:-125'])
-
+export { GRID }
 const LAKE = { x: 78, z: -28, r: 17 }
-const STREAM = { hw: 3.4, depth: -1.5, pts: [[96, 360], [110, 290], [104, 234], [102, 200], [106, 170], [108, 140], [103, 110], [100, 80], [100, 50], [100, 30], [92, 0], [84, -14]] }
-const RIVER = { hw: 4.6, depth: -1.8, pts: [[90, -30], [110, -38], [128, -46], [150, -50], [176, -53], [200, -55], [240, -66], [290, -60], [360, -58]] }
 // Airport south of town: flattened apron + runway area
 export const AIRPORT = {
   x0: -235, x1: 235, z0: -334, z1: -190,
@@ -40,12 +36,7 @@ export const AIRPORT = {
   tower: { x: -20, z: -212 },
   helipad: { x: -32, z: -248 },
 }
-// Extra roads beyond the grid: airport access + terminal road
-const EXTRA_EDGES = [
-  { ax: 25, az: -175, bx: 25, bz: -200, axis: 'z' },
-  { ax: -80, az: -200, bx: 25, bz: -200, axis: 'x' },
-  { ax: 25, az: -200, bx: 130, bz: -200, axis: 'x' },
-]
+const SETTLEMENTS = settlementRects()
 
 function segDistance(px, pz, ax, az, bx, bz) {
   const abx = bx - ax, abz = bz - az
@@ -81,18 +72,40 @@ export class Layout {
     return this.noise.noise(x, z)
   }
 
+  // Desert basin weight (south-west, around Dustwater)
+  desertK(x, z) {
+    return smoothstep(260, 40, Math.hypot(x + 545, z + 550) - 120)
+  }
+
   baseHeight(x, z) {
+    // Maple Hollow: the original gently rolling town ground
     const zz = z < 0 ? z * 0.92 : z
     const rr = Math.pow(Math.pow(Math.abs(x), 4) + Math.pow(Math.abs(zz), 4), 0.25)
     const town = 1 - smoothstep(178, 205, rr)
-    const n = this.n2(x * 0.012, z * 0.012) * (0.55 + (1 - town) * 2.2) + this.n2(x * 0.045 + 10, z * 0.045 - 3) * 0.15
-    const hills = smoothstep(200, 260, rr) * (3 + 6 * (this.n2(x * 0.02 - 7, z * 0.02 + 3) * 0.5 + 0.5))
-    const rim = smoothstep(300, 346, rr) * (20 + 10 * this.n2(x * 0.03 + 5, z * 0.03))
-    let h = n + hills + rim
-    // the airport is a flat plateau
+    const nTown = this.n2(x * 0.012, z * 0.012) * 0.55 + this.n2(x * 0.045 + 10, z * 0.045 - 3) * 0.15
+    // Countryside: broad low hills, a desert basin to the south-west, mountains to the north
+    const c1 = this.n2(x * 0.004 + 3, z * 0.004 - 5) * 0.5 + 0.5
+    const c2 = this.n2(x * 0.011 - 7, z * 0.011 + 3)
+    let country = 2.6 + c1 * 9 + c2 * 2.4
+    const dk = this.desertK(x, z)
+    country = lerp(country, 2.2 + c2 * 1.4 + c1 * 2, dk)
+    const north = smoothstep(560, 760, z) * (28 + 26 * (this.n2(x * 0.008 + 11, z * 0.008) * 0.5 + 0.5))
+    const cheb = Math.max(Math.abs(x), Math.abs(z))
+    const rim = smoothstep(WORLD.half - 90, WORLD.half - 12, cheb) * (22 + 10 * this.n2(x * 0.03 + 5, z * 0.03))
+    let h = lerp(country + north + rim, nTown, town)
+    // Flat ground for every other settlement (gentle noise so it isn't a table top)
+    for (const r of SETTLEMENTS) {
+      if (r.height === null) continue
+      const out = Math.max(r.x0 - x, x - r.x1, r.z0 - z, z - r.z1, 0)
+      if (out > 60) continue
+      h = lerp(h, r.height + nTown * 0.6, 1 - smoothstep(12, 55, out))
+    }
+    // The airport is a flat plateau
     const a = AIRPORT
-    const out = Math.max(a.x0 - x, x - a.x1, a.z0 - z, z - a.z1, 0)
-    if (out < 30) h = lerp(0.35, h, smoothstep(0, 30, out))
+    const outA = Math.max(a.x0 - x, x - a.x1, a.z0 - z, z - a.z1, 0)
+    if (outA < 30) h = lerp(0.35, h, smoothstep(0, 30, outA))
+    // The sea to the east: a sandy slope down below the water line
+    h = lerp(h, -3.6, smoothstep(SEA_X - 22, SEA_X + 18, x))
     return h
   }
 
@@ -113,14 +126,23 @@ export class Layout {
   // ---------------------------------------------------------------- Streets
   buildNetwork() {
     const edges = []
-    for (const g of GRID) {
-      for (let k = 0; k < GRID.length - 1; k++) {
-        const a = GRID[k], b = GRID[k + 1]
-        if (!REMOVED.has(`v:${g}:${a}:${b}`)) edges.push({ ax: g, az: a, bx: g, bz: b, axis: 'z' })
-        if (!REMOVED.has(`h:${g}:${a}:${b}`)) edges.push({ ax: a, az: g, bx: b, bz: g, axis: 'x' })
+    for (const t of TOWNS) {
+      const removed = new Set(t.removed)
+      // vertical streets (constant x) and horizontal streets (constant z)
+      for (const x of t.xs) {
+        for (let k = 0; k < t.zs.length - 1; k++) {
+          const a = t.zs[k], b = t.zs[k + 1]
+          if (!removed.has(`v:${x}:${a}:${b}`)) edges.push({ ax: x, az: a, bx: x, bz: b, axis: 'z', town: t.id })
+        }
+      }
+      for (const z of t.zs) {
+        for (let k = 0; k < t.xs.length - 1; k++) {
+          const a = t.xs[k], b = t.xs[k + 1]
+          if (!removed.has(`h:${z}:${a}:${b}`)) edges.push({ ax: a, az: z, bx: b, bz: z, axis: 'x', town: t.id })
+        }
       }
     }
-    for (const e of EXTRA_EDGES) edges.push({ ...e, extra: true })
+    for (const e of EXTRA_EDGES) edges.push({ ...e, axis: e.ax === e.bx ? 'z' : 'x', extra: true })
     this.edges = edges
     // Nodes (intersections) with their degree
     const nodes = new Map()
@@ -254,19 +276,18 @@ export class Layout {
   // ---------------------------------------------------------------- Blocks
   buildBlocks() {
     const blocks = []
-    const merged = [
-      { id: 'park', x0: 25, x1: 125, z0: -75, z1: 25 },
-      { id: 'yard', x0: -175, x1: -75, z0: -175, z1: -125 },
-    ]
-    const covered = (x0, z0) => merged.some((m) => x0 >= m.x0 && x0 < m.x1 && z0 >= m.z0 && z0 < m.z1)
-    for (let bx = 0; bx < GRID.length - 1; bx++) {
-      for (let bz = 0; bz < GRID.length - 1; bz++) {
-        const x0 = GRID[bx], z0 = GRID[bz]
-        if (covered(x0, z0)) continue
-        blocks.push({ id: `${bx},${bz}`, bx, bz, x0, x1: GRID[bx + 1], z0, z1: GRID[bz + 1] })
+    for (const t of TOWNS) {
+      const merged = t.merged || []
+      const covered = (x0, z0) => merged.some((m) => x0 >= m.x0 && x0 < m.x1 && z0 >= m.z0 && z0 < m.z1)
+      for (let bx = 0; bx < t.xs.length - 1; bx++) {
+        for (let bz = 0; bz < t.zs.length - 1; bz++) {
+          const x0 = t.xs[bx], z0 = t.zs[bz]
+          if (covered(x0, z0)) continue
+          blocks.push({ id: `${t.prefix}${bx},${bz}`, bx, bz, x0, x1: t.xs[bx + 1], z0, z1: t.zs[bz + 1], town: t.id })
+        }
       }
+      for (const m of merged) blocks.push({ ...m, town: t.id })
     }
-    for (const m of merged) blocks.push({ ...m })
     // Inner rectangle (inside the sidewalk) for each block
     const o = HW + SW
     for (const b of blocks) {
@@ -361,10 +382,14 @@ export class Layout {
         const slope = (Math.hypot(hr - hl, hu - hd) * 0.5) / cell
         const road = 1 - smoothstep(HW + SW - 0.3, HW + SW + 0.6, d)
         const nearWater = Math.max(smoothstep(1.45, 1.05, this.lakeQ(x, z)), smoothstep(4, 0, this.channelDistance(x, z)))
-        const shore = nearWater * smoothstep(W + 1.1, W + 0.25, h)
-        const dirt = smoothstep(0.5, 0.85, this.n2(x * 0.06 + 40, z * 0.06 - 12) * 0.5 + 0.5) * 0.6
+        const beach = smoothstep(SEA_X - 50, SEA_X - 18, x)
+        const shore = Math.max(nearWater * smoothstep(W + 1.1, W + 0.25, h), beach)
+        const desert = this.desertK(x, z)
+        const fort = Math.max(FORT.x0 - 8 - x, x - FORT.x1 - 8, FORT.z0 - 8 - z, z - FORT.z1 - 8) < 0 ? 0.75 : 0
+        const dirt = Math.max(smoothstep(0.5, 0.85, this.n2(x * 0.06 + 40, z * 0.06 - 12) * 0.5 + 0.5) * 0.6, desert * 0.92, fort)
         let grass = smoothstep(HW + SW + 0.2, HW + SW + 1.6, d) * smoothstep(W + 0.35, W + 0.9, h) * (1 - smoothstep(0.55, 1.0, slope))
         grass *= 1 - dirt * 0.75
+        grass *= (1 - beach) * (1 - desert) * (1 - fort)
         grass *= 0.65 + 0.35 * (this.n2(x * 0.11, z * 0.11) * 0.5 + 0.5)
         this.groundMap[i * 4] = clamp(grass * 255, 0, 255)
         this.groundMap[i * 4 + 1] = clamp(road * 255, 0, 255)
@@ -416,6 +441,7 @@ export class Layout {
     if (q.d < HW + SW + roadMargin + r) return false
     if (!allowWater && this.getHeight(x, z) < WORLD.waterLevel + 0.5) return false
     if (!allowWater && this.channelDistance(x, z) < r + 1) return false
+    if (x > SEA_X - 30 - r) return false
     for (const o of this.occupied) {
       if (Math.abs(o.x - x) > o.r + r || Math.abs(o.z - z) > o.r + r) continue
       if (Math.hypot(o.x - x, o.z - z) < o.r + r) return false
@@ -431,11 +457,12 @@ export class Layout {
     const nodes = []
     const key = (x, z) => `${Math.round(x * 2)},${Math.round(z * 2)}`
     const index = new Map()
+    let curTown = 'maple'
     const addNode = (x, z) => {
       const k = key(x, z)
       if (index.has(k)) return index.get(k)
       const id = nodes.length
-      nodes.push({ id, x, z, links: [] })
+      nodes.push({ id, x, z, links: [], town: curTown })
       index.set(k, id)
       return id
     }
@@ -446,6 +473,7 @@ export class Layout {
       nodes[b].links.push({ to: a, len, crosswalk })
     }
     for (const b of this.blocks) {
+      curTown = b.town
       // corners plus mid points along long sides so people can reach doors
       const xs = [b.x0 + o, b.x1 - o], zs = [b.z0 + o, b.z1 - o]
       const ring = []
@@ -462,8 +490,19 @@ export class Layout {
       b.walkNodes = ring
     }
     // Crosswalks: connect corner nodes that face each other across a street
+    // (spatial hash so the bigger valley stays fast)
+    const bucket = new Map()
+    const bk = (x, z) => `${Math.floor(x / 20)},${Math.floor(z / 20)}`
+    for (const n of nodes) {
+      const k = bk(n.x, n.z)
+      if (!bucket.has(k)) bucket.set(k, [])
+      bucket.get(k).push(n)
+    }
     for (const a of nodes) {
-      for (const c of nodes) {
+      const cx = Math.floor(a.x / 20), cz = Math.floor(a.z / 20)
+      const near = []
+      for (let ox = -1; ox <= 1; ox++) for (let oz = -1; oz <= 1; oz++) near.push(...(bucket.get(`${cx + ox},${cz + oz}`) || []))
+      for (const c of near) {
         if (c.id <= a.id) continue
         const dx = Math.abs(a.x - c.x), dz = Math.abs(a.z - c.z)
         const across = 2 * o
@@ -473,7 +512,9 @@ export class Layout {
         }
       }
     }
-    this.walk = { nodes }
+    const byTown = {}
+    for (const n of nodes) (byTown[n.town] ||= []).push(n.id)
+    this.walk = { nodes, byTown }
   }
 
   // A* over the sidewalk graph
@@ -527,24 +568,25 @@ export class Layout {
     groundTex.needsUpdate = true
     this.heightTex = heightTex
     this.groundTex = groundTex
-    this.roadTex = this.buildRoadTexture()
-    return { heightTex, groundTex, roadTex: this.roadTex }
+    this.roadTex = this.buildRoadTexture(WORLD.roadTexHalf, 1280)
+    this.roadTex2 = this.buildRoadTexture(WORLD.roadTexOuterHalf, 1280)
+    return { heightTex, groundTex, roadTex: this.roadTex, roadTex2: this.roadTex2 }
   }
 
   // RGBA half-float: R = distance to street centreline, G = Chebyshev distance to the
   // nearest intersection, B = signed sideways offset from the nearest centreline (it
-  // interpolates through zero, so centre lines stay crisp), A = zone (+1 paved, -1 dirt).
-  buildRoadTexture() {
-    const N = 1280
-    const size = WORLD.roadTexHalf * 2
+  // interpolates through zero, so centre lines stay crisp), A = zone (+1 paved, -1 dirt,
+  // -2 = highway corridor: gravel shoulders instead of sidewalks).
+  buildRoadTexture(texHalf, N) {
+    const size = texHalf * 2
     const texel = size / N
     const data = new Float32Array(N * N * 4)
     for (let i = 0; i < N * N; i++) {
       data[i * 4] = 60
       data[i * 4 + 1] = 60
     }
-    const toTex = (w) => (w + WORLD.roadTexHalf) / texel - 0.5
-    const toWorld = (t) => -WORLD.roadTexHalf + (t + 0.5) * texel
+    const toTex = (w) => (w + texHalf) / texel - 0.5
+    const toWorld = (t) => -texHalf + (t + 0.5) * texel
     const raster = (x0, z0, x1, z1, fn) => {
       const tx0 = Math.max(0, Math.floor(toTex(x0))), tx1 = Math.min(N - 1, Math.ceil(toTex(x1)))
       const tz0 = Math.max(0, Math.floor(toTex(z0))), tz1 = Math.min(N - 1, Math.ceil(toTex(z1)))
@@ -554,17 +596,21 @@ export class Layout {
       }
     }
     const R = 14
+    const hwy = new Uint8Array(N * N)
     for (const e of this.edges) {
       raster(Math.min(e.ax, e.bx) - R, Math.min(e.az, e.bz) - R, Math.max(e.ax, e.bx) + R, Math.max(e.az, e.bz) + R, (o, x, z) => {
         const d = segDistance(x, z, e.ax, e.az, e.bx, e.bz)
         if (d < data[o]) {
           data[o] = d
           data[o + 2] = e.axis === 'x' ? z - e.az : x - e.ax
+          hwy[o / 4] = e.hwy || e.fort ? 1 : 0
         }
       })
     }
     for (const n of this.nodes) {
       if (n.edges.length < 2) continue
+      // highway bends are not junctions (no zebra crossings on them)
+      if (n.edges.length === 2 && n.edges.every((e) => e.hwy || e.fort)) continue
       raster(n.x - 16, n.z - 16, n.x + 16, n.z + 16, (o, x, z) => {
         const d = Math.max(Math.abs(x - n.x), Math.abs(z - n.z))
         if (d < data[o + 1]) data[o + 1] = d
@@ -598,7 +644,11 @@ export class Layout {
         }
       }
     }
-    for (let i = 0; i < N * N; i++) data[i * 4 + 3] = zoneMask[i * 2] - zoneMask[i * 2 + 1]
+    for (let i = 0; i < N * N; i++) {
+      const z = zoneMask[i * 2] - zoneMask[i * 2 + 1]
+      // highways are flagged as -2 (a soft dirt verge where the flag fades out)
+      data[i * 4 + 3] = hwy[i] && Math.abs(z) < 0.01 && data[i * 4] < HW + SW + 3 ? -2 : z
+    }
     const half = new Uint16Array(N * N * 4)
     for (let i = 0; i < half.length; i++) half[i] = THREE.DataUtils.toHalfFloat(data[i])
     const tex = new THREE.DataTexture(half, N, N, THREE.RGBAFormat, THREE.HalfFloatType)
@@ -635,9 +685,11 @@ vec4 groundMask(vec2 xz) {
 
 export const roadGLSL = /* glsl */ `
 uniform sampler2D uRoadTex;
+uniform sampler2D uRoadTex2;
 const float ROAD_HW = ${HW.toFixed(2)};
 const float ROAD_SW = ${SW.toFixed(2)};
 vec4 roadData(vec2 xz) {
-  return texture2D(uRoadTex, (xz + ${WORLD.roadTexHalf.toFixed(1)}) / ${(WORLD.roadTexHalf * 2).toFixed(1)});
+  if (max(abs(xz.x), abs(xz.y)) < ${(WORLD.roadTexHalf - 2).toFixed(1)}) return texture2D(uRoadTex, (xz + ${WORLD.roadTexHalf.toFixed(1)}) / ${(WORLD.roadTexHalf * 2).toFixed(1)});
+  return texture2D(uRoadTex2, (xz + ${WORLD.roadTexOuterHalf.toFixed(1)}) / ${(WORLD.roadTexOuterHalf * 2).toFixed(1)});
 }
 `

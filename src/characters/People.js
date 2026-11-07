@@ -7,10 +7,116 @@ import { EMOTE } from './Emotes.js'
 import { makeRandom, clamp, angleDelta, damp } from '../core/math.js'
 
 // Shared reaction logic for every character (also used by builders and taxi fares)
+// Clear every reaction pose flag (back to normal life)
+export function calm(c) {
+  c.panic = 0
+  c.cower = 0
+  c.handsUp = 0
+  c.hit = 0
+  c.lie = 0
+  c.tumble = 0
+  c.spin = 0
+  c.fist = 0
+  c.mouthOpen = 0
+  c.expr = null
+  c.down = false
+}
+
 export function updateReaction(c, dt, ctx) {
   const r = c.reaction
   if (r) {
     r.t += dt
+    if (r.type === 'stagger') {
+      // flinch from a hit, then run
+      c.hit = Math.max(0, 1 - r.t / 0.35)
+      c.walk = damp(c.walk, 0, 10, dt)
+      if (r.t > 0.35) {
+        c.hit = 0
+        c.reaction = r.then || { type: 'recover', t: 0, d: 0.6 }
+      }
+      return true
+    }
+    if (r.type === 'flee') {
+      // run away from the danger, arms up, then calm down
+      const dx = c.x - r.fx, dz = c.z - r.fz
+      const d = Math.hypot(dx, dz) || 1
+      c.panic = damp(c.panic || 0, 1, 8, dt)
+      c.sit = 0
+      c.carry = 0
+      c.talk = 0
+      walkTo(c, c.x + (dx / d) * 6 + (r.wx || 0), c.z + (dz / d) * 6 + (r.wz || 0), r.speed || 4.6, dt, ctx, 0.01)
+      if (r.t > r.d) {
+        c.panic = 0
+        c.reaction = { type: 'recover', t: 0, d: 0.8 }
+        ctx.onCalm?.(c)
+      }
+      return true
+    }
+    if (r.type === 'cower') {
+      c.cower = damp(c.cower || 0, 1, 9, dt)
+      c.walk = damp(c.walk, 0, 10, dt)
+      c.run = damp(c.run, 0, 10, dt)
+      if (r.t > r.d) {
+        c.cower = 0
+        c.reaction = { type: 'flee', t: 0, d: 4 + Math.random() * 3, fx: r.fx, fz: r.fz, speed: 4.4 }
+      }
+      return true
+    }
+    if (r.type === 'handsup') {
+      c.handsUp = damp(c.handsUp || 0, 1, 9, dt)
+      c.walk = damp(c.walk, 0, 10, dt)
+      c.heading += angleDelta(c.heading, Math.atan2(r.fx - c.x, r.fz - c.z)) * Math.min(1, dt * 6)
+      if (r.t > r.d) {
+        c.handsUp = 0
+        c.reaction = { type: 'flee', t: 0, d: 5, fx: r.fx, fz: r.fz, speed: 4.8 }
+      }
+      return true
+    }
+    if (r.type === 'down') {
+      // collapsed (shot, blown up or hit hard by a car). Lies still, then revives.
+      c.walk = 0
+      c.run = 0
+      c.panic = 0
+      c.down = true
+      if (r.phase === 'fall') {
+        const k = Math.min(1, r.t / 0.55)
+        c.lie = k * k
+        c.hit = 1 - k
+        if (r.vy !== undefined) {
+          r.vy -= 14 * dt
+          c.y += r.vy * dt
+        }
+        c.x += (r.vx || 0) * dt * (1 - k * 0.7)
+        c.z += (r.vz || 0) * dt * (1 - k * 0.7)
+        const g = ctx.ground(c.x, c.z)
+        if (c.y < g) c.y = g
+        if (r.t > 0.55 && c.y <= g + 0.05) {
+          c.y = g
+          c.lie = 1
+          c.hit = 0
+          r.phase = 'lie'
+          r.t = 0
+          ctx.onVoice?.('oof', c.x, c.z)
+        }
+      } else if (r.phase === 'lie') {
+        c.y = ctx.ground(c.x, c.z)
+        if (r.t > r.d) {
+          // nobody watching? quietly respawn elsewhere; otherwise get back up
+          if (ctx.respawn?.(c)) return true
+          r.phase = 'up'
+          r.t = 0
+        }
+      } else if (r.phase === 'up') {
+        c.lie = Math.max(0, 1 - r.t / 1.2)
+        if (r.t > 1.2) {
+          calm(c)
+          c.hp = c.maxHp || 100
+          ctx.emotes.show(c, EMOTE.dizzy, 2.2)
+          c.reaction = { type: 'knock', phase: 'dizzy', t: 0 }
+        }
+      }
+      return true
+    }
     if (r.type === 'dodge') {
       const k = Math.min(1, r.t / 0.45)
       c.x += r.dx * 5 * dt * (1 - k * 0.5)
@@ -45,6 +151,13 @@ export function updateReaction(c, dt, ctx) {
           c.spin = 0
           c.lie = 1
           ctx.onVoice?.('oof', c.x, c.z)
+          // a hard hit leaves them out cold for a while
+          if (r.severe) {
+            c.reaction = { type: 'down', phase: 'lie', t: 0, d: 20 + Math.random() * 15 }
+            c.lieVar = Math.random()
+            ctx.onDowned?.(c, 'vehicle')
+            return true
+          }
         }
       } else if (r.phase === 'lie') {
         c.y = ctx.ground(c.x, c.z)
@@ -63,6 +176,7 @@ export function updateReaction(c, dt, ctx) {
         if (r.t > 2.2) {
           r.phase = 'angry'
           r.t = 0
+          c.down = false
           c.fist = 1
           c.heading = Math.atan2(ctx.car.x - c.x, ctx.car.z - c.z)
           ctx.emotes.show(c, EMOTE.angry, 1.8)
@@ -96,8 +210,9 @@ export function updateReaction(c, dt, ctx) {
   if (Math.abs(c.y - car.y) > 2.5 || d2 > 400) return false
   if (d2 < 1.9 * 1.9 && speed > 1.6) {
     // bumped: cartoon tumble
-    const s = Math.min(speed, 18)
-    c.reaction = { type: 'knock', phase: 'fly', t: 0, vx: car.vx * 0.55 + dx * 1.5, vz: car.vz * 0.55 + dz * 1.5, vy: 3 + s * 0.25 }
+    const s = Math.min(speed, 26)
+    c.reaction = { type: 'knock', phase: 'fly', t: 0, vx: car.vx * 0.55 + dx * 1.5, vz: car.vz * 0.55 + dz * 1.5, vy: 3 + s * 0.3, severe: speed > (car.heavy ? 4 : 11) }
+    c.lieDir = 1
     c.sit = 0
     c.carry = 0
     c.walk = 0
@@ -165,7 +280,7 @@ export class People {
     const nodes = layout.walk.nodes
     const rnd = this.rnd
 
-    const count = quality.name === 'low' ? 55 : 110
+    const count = quality.name === 'low' ? 90 : 170
     for (let i = 0; i < count; i++) {
       const n = nodes[Math.floor(rnd.random() * nodes.length)]
       const c = rig.add(makeCharacter(rnd))
@@ -265,8 +380,9 @@ export class People {
 
   pickDestination(c) {
     const nodes = this.layout.walk.nodes
+    const pool = this.layout.walk.byTown[nodes[c.node]?.town] || nodes.map((n) => n.id)
     for (let tries = 0; tries < 6; tries++) {
-      const goal = Math.floor(this.rnd.random() * nodes.length)
+      const goal = pool[Math.floor(this.rnd.random() * pool.length)]
       if (goal === c.node) continue
       const path = this.layout.findPath(c.node, goal)
       if (path && path.length > 1 && path.length < 40) {
@@ -326,9 +442,131 @@ export class People {
     this.pickDestination(c)
   }
 
+  // ---------------------------------------------------------------- combat hooks
+  // A bullet / punch / blast hits a character. Returns true if they went down.
+  hit(c, dmg, from, kind = 'bullet') {
+    if (!c || c.down || c.isPlayer) return false
+    c.hp = (c.hp ?? c.maxHp ?? 100) - dmg
+    const dx = c.x - from.x, dz = c.z - from.z
+    const d = Math.hypot(dx, dz) || 1
+    this.releaseTasks(c)
+    if (c.hp <= 0) {
+      this.knockDown(c, { x: dx / d, z: dz / d }, kind)
+      return true
+    }
+    c.hit = 1
+    c.reaction = { type: 'stagger', t: 0, then: c.fights ? null : { type: 'flee', t: 0, d: 6 + Math.random() * 4, fx: from.x, fz: from.z, speed: 4.6 } }
+    this.emotes?.show(c, EMOTE.alarm, 1.0)
+    this.onVoice?.('yelp', c.x, c.z)
+    return false
+  }
+
+  knockDown(c, dir, kind = 'bullet') {
+    this.releaseTasks(c)
+    const blast = kind === 'explosion'
+    const facing = Math.sin(c.heading) * dir.x + Math.cos(c.heading) * dir.z
+    c.lieDir = facing > 0 ? -1 : 1 // shoved from behind: face down
+    c.lieVar = Math.random()
+    c.hp = 0
+    c.down = true
+    c.reaction = { type: 'down', phase: 'fall', t: 0, vx: dir.x * (blast ? 7 : kind === 'vehicle' ? 5 : 1.4), vz: dir.z * (blast ? 7 : kind === 'vehicle' ? 5 : 1.4), vy: blast ? 5 : undefined, d: 25 + Math.random() * 15 }
+    this.onVoice?.(blast ? 'yelp' : 'oof', c.x, c.z)
+    this.onDowned?.(c, kind)
+  }
+
+  releaseTasks(c) {
+    if (c.bench) { this.benchTaken.delete(c.bench); c.bench = null }
+    if (c.partner) { c.partner.partner = null; c.partner.state = 'think'; c.partner = null }
+    c.sit = 0
+    c.talk = 0
+    c.carry = 0
+    c.hammer = 0
+    c.sweep = 0
+    c.wave = 0
+    if (c.state === 'inside') { c.visible = true; c.state = 'think' }
+  }
+
+  // Gunshots, explosions, a tank or someone pointing a gun: nearby people react.
+  // Returns how many people saw it (witnesses for the wanted level).
+  scare(x, z, radius, kind = 'gunshot') {
+    let seen = 0
+    const r2 = radius * radius
+    for (const c of this.all) {
+      if (c.down || c.noReact || !c.visible || c.isPlayer) continue
+      const d2 = (c.x - x) ** 2 + (c.z - z) ** 2
+      if (d2 > r2) continue
+      seen++
+      if (c.fights) continue // gang members and police don't run
+      const cur = c.reaction?.type
+      if (cur === 'flee' || cur === 'cower' || cur === 'down' || cur === 'knock' || cur === 'stagger') continue
+      this.releaseTasks(c)
+      const d = Math.sqrt(d2)
+      const rnd = Math.random()
+      if (kind === 'aim') {
+        if (d < 14) c.reaction = { type: 'handsup', t: 0, d: 2 + rnd * 2, fx: x, fz: z }
+        continue
+      }
+      if (d < radius * 0.3 && rnd < 0.35) c.reaction = { type: 'cower', t: 0, d: 2 + rnd * 3, fx: x, fz: z }
+      else {
+        const a = (Math.random() - 0.5) * 6
+        c.reaction = { type: 'flee', t: 0, d: 5 + rnd * 5, fx: x, fz: z, speed: 4.2 + rnd * 1.2, wx: a, wz: -a }
+      }
+      if (rnd < 0.25) this.onVoice?.('scream', c.x, c.z)
+      if (rnd < 0.3) this.emotes?.show(c, EMOTE.alarm, 1.4)
+    }
+    return seen
+  }
+
+  // Revive a downed walker somewhere else in town if the player isn't looking
+  respawnFar(c, player) {
+    if (c.role !== 'walker') return false
+    const nodes = this.layout.walk.nodes
+    const d2 = (c.x - player.x) ** 2 + (c.z - player.z) ** 2
+    if (d2 < 45 * 45) return false
+    const pool = this.layout.walk.byTown[nodes[c.node]?.town] || nodes.map((n) => n.id)
+    for (let k = 0; k < 8; k++) {
+      const n = nodes[pool[Math.floor(this.rnd.random() * pool.length)]]
+      if ((n.x - player.x) ** 2 + (n.z - player.z) ** 2 < 60 * 60) continue
+      calm(c)
+      c.reaction = null
+      c.hp = c.maxHp || 100
+      c.x = n.x
+      c.z = n.z
+      c.y = this.layout.getDriveHeight(n.x, n.z)
+      c.node = n.id
+      c.state = 'think'
+      c.timer = 1
+      c.crossing = false
+      return true
+    }
+    return false
+  }
+
+  // Nearest living character to a point (optionally within a radius)
+  nearest(x, z, r = 3, filter = null) {
+    let best = null, bd = r * r
+    for (const c of this.all) {
+      if (c.down || !c.visible || (filter && !filter(c))) continue
+      const d = (c.x - x) ** 2 + (c.z - z) ** 2
+      if (d < bd) { bd = d; best = c }
+    }
+    return best
+  }
+
+  // People far from the player think less often (every 4th frame, with the saved-up time)
   update(dt, time, ctx) {
-    for (const c of this.walkers) this.updateWalker(c, dt, time, ctx)
-    for (const c of this.others) this.updateOther(c, dt, time, ctx)
+    this.frame = (this.frame || 0) + 1
+    const px = ctx.car.x, pz = ctx.car.z
+    const far2 = 220 * 220
+    const step = (c, fn) => {
+      c.simAcc = (c.simAcc || 0) + dt
+      if ((c.x - px) ** 2 + (c.z - pz) ** 2 > far2 && !c.reaction && ((this.frame + c.index) & 3) !== 0) return
+      const d = Math.min(c.simAcc, 0.2)
+      c.simAcc = 0
+      fn.call(this, c, d, time, ctx)
+    }
+    for (const c of this.walkers) step(c, this.updateWalker)
+    for (const c of this.others) step(c, this.updateOther)
   }
 
   updateWalker(c, dt, time, ctx) {
@@ -338,7 +576,22 @@ export class People {
       if (c.partner) { c.partner.partner = null; c.partner = null }
       c.state = 'think'
       c.timer = 0.5
+      c.displaced = true
       return
+    }
+    if (c.displaced) {
+      // after running off, rejoin the nearest sidewalk in the same town
+      c.displaced = false
+      const nodes0 = this.layout.walk.nodes
+      const pool = this.layout.walk.byTown[nodes0[c.node]?.town] || []
+      let best = c.node, bd = Infinity
+      for (const id of pool) {
+        const n = nodes0[id]
+        const d = (n.x - c.x) ** 2 + (n.z - c.z) ** 2
+        if (d < bd) { bd = d; best = id }
+      }
+      c.node = best
+      c.crossing = false
     }
     const nodes = this.layout.walk.nodes
     c.timer -= dt

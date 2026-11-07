@@ -87,10 +87,29 @@ export class Sfx {
     }
   }
 
+  // Car exhaust pop on lift-off: a short crack with a little body (no sub-bass thump)
   pop(gain = 0.25) {
     const t = this.ctx.currentTime + Math.random() * 0.02
-    this.noiseBurst({ t, dur: 0.06, freq: 900 + Math.random() * 900, q: 1.2, gain })
-    this.tone({ t, freq: 70, dur: 0.08, gain: gain * 0.8, glideTo: 40 })
+    this.noiseBurst({ t, dur: 0.06, freq: 1100 + Math.random() * 900, q: 1.2, gain })
+    this.tone({ t, freq: 150, dur: 0.06, gain: gain * 0.45, glideTo: 95 })
+  }
+
+  // Motorbike over-run crackle: quick bright snaps
+  crackle(gain = 0.06) {
+    const t0 = this.ctx.currentTime + Math.random() * 0.015
+    const n = 1 + Math.floor(Math.random() * 3)
+    for (let i = 0; i < n; i++) {
+      const t = t0 + i * (0.025 + Math.random() * 0.03)
+      this.noiseBurst({ t, dur: 0.025 + Math.random() * 0.02, filter: 'highpass', freq: 1800 + Math.random() * 1500, q: 0.7, gain: gain * (0.7 + Math.random() * 0.6) })
+    }
+    this.tone({ t: t0, freq: 240, dur: 0.035, type: 'triangle', gain: gain * 0.3, glideTo: 180 })
+  }
+
+  // Nitro kick: valve hiss + whoosh
+  nitroStart() {
+    const t = this.ctx.currentTime
+    this.noiseBurst({ t, dur: 0.45, freq: 900, q: 0.8, gain: 0.12, attack: 0.02, buffer: 'pink', sweepTo: 3600 })
+    this.noiseBurst({ t, dur: 0.18, filter: 'highpass', freq: 5000, q: 0.7, gain: 0.07 })
   }
 
   landing(strength) {
@@ -223,6 +242,9 @@ export class Sfx {
       angry: [[0.85, 0.8, 0.1], [0.9, 0.75, 0.12], [0.95, 0.7, 0.16]],
       laugh: [[1.3, 1.25, 0.07], [1.3, 1.2, 0.07], [1.25, 1.1, 0.09]],
       wow: [[0.9, 1.5, 0.22]],
+      scream: [[1.6, 2.4, 0.18], [2.4, 2.1, 0.32], [2.1, 1.5, 0.22]],
+      halt: [[0.75, 0.7, 0.09], [0.8, 0.62, 0.18]],
+      hands: [[0.75, 0.85, 0.12], [0.85, 0.7, 0.12], [0.7, 0.65, 0.14]],
     }
     let at = t
     for (const [a, b, d] of shapes[kind] || shapes.hey) {
@@ -303,4 +325,140 @@ export class Sfx {
     const t = this.ctx.currentTime + 0.01
     ;[587.33, 739.99, 880, 1174.66].forEach((f, i) => this.bell(t + i * 0.09, f, 0.1, 1.3))
   }
+
+  // ---------------------------------------------------------------- combat
+  // A stereo-panned destination for world sounds (pan -1 left .. 1 right)
+  panned(pan = 0) {
+    if (Math.abs(pan) < 0.05) return this.out
+    const p = this.ctx.createStereoPanner()
+    p.pan.value = Math.max(-1, Math.min(1, pan))
+    p.connect(this.out)
+    return p
+  }
+
+  gunshot(kind, dist = 0, pan = 0) {
+    const v = this.near(dist, 45)
+    if (v < 0.01) return
+    const t = this.ctx.currentTime + 0.003
+    const dest = this.panned(pan)
+    const far = Math.min(1, dist / 120) // distant shots lose their top end
+    const crackF = 1800 - far * 1200
+    const P = {
+      pistol: { crack: 0.42, body: [190, 95, 0.09], tail: 0.18, dur: 0.07 },
+      smg: { crack: 0.3, body: [230, 120, 0.06], tail: 0.1, dur: 0.05 },
+      shotgun: { crack: 0.5, body: [120, 48, 0.22], tail: 0.35, dur: 0.16, boom: 0.6 },
+      rifle: { crack: 0.48, body: [210, 90, 0.08], tail: 0.22, dur: 0.06 },
+      sniper: { crack: 0.62, body: [160, 60, 0.14], tail: 0.45, dur: 0.09, boom: 0.35 },
+      mg: { crack: 0.36, body: [200, 100, 0.06], tail: 0.12, dur: 0.05 },
+      cannon: { crack: 0.6, body: [80, 32, 0.5], tail: 0.7, dur: 0.25, boom: 1.0 },
+    }[kind] || { crack: 0.4, body: [190, 95, 0.09], tail: 0.18, dur: 0.07 }
+    this.noiseBurst({ t, dur: P.dur, filter: 'highpass', freq: crackF, q: 0.7, gain: P.crack * v, dest })
+    this.noiseBurst({ t, dur: P.dur * 1.6, freq: 900 - far * 400, q: 0.8, gain: P.crack * 0.6 * v, dest })
+    this.tone({ t, freq: P.body[0], dur: P.body[2], gain: 0.35 * v, glideTo: P.body[1], dest })
+    if (P.boom) this.noiseBurst({ t, dur: P.dur * 3, filter: 'lowpass', freq: 500, q: 0.7, gain: P.boom * v, buffer: 'brown', dest })
+    // the slap-back echo off the town's walls
+    this.noiseBurst({ t: t + 0.02, dur: 0.25 + P.tail, filter: 'lowpass', freq: 1400 - far * 700, q: 0.6, gain: P.tail * v, buffer: 'pink', dest: this.reverb })
+  }
+
+  rocketLaunch(dist = 0, pan = 0) {
+    const v = this.near(dist, 40)
+    const t = this.ctx.currentTime
+    const dest = this.panned(pan)
+    this.noiseBurst({ t, dur: 0.7, freq: 400, q: 0.7, gain: 0.35 * v, attack: 0.02, buffer: 'pink', sweepTo: 2400, dest })
+    this.tone({ t, freq: 140, dur: 0.2, gain: 0.25 * v, glideTo: 60, dest })
+  }
+
+  explosion(dist = 0, pan = 0, size = 1) {
+    const v = Math.min(1, this.near(dist, 80) * (0.7 + size * 0.3))
+    if (v < 0.01) return
+    const t = this.ctx.currentTime + Math.min(dist / 340, 0.6) // sound travels
+    const dest = this.panned(pan)
+    this.noiseBurst({ t, dur: 0.12, filter: 'highpass', freq: 900, q: 0.6, gain: 0.5 * v, dest })
+    this.noiseBurst({ t, dur: 1.9, filter: 'lowpass', freq: 1100, q: 0.8, gain: 0.85 * v, attack: 0.006, buffer: 'brown', sweepTo: 140, dest })
+    this.noiseBurst({ t, dur: 0.7, freq: 600, q: 0.6, gain: 0.4 * v, buffer: 'pink', sweepTo: 200, dest })
+    this.tone({ t, freq: 75, dur: 0.6, gain: 0.5 * v, glideTo: 32, dest })
+    this.noiseBurst({ t: t + 0.05, dur: 2.6, filter: 'lowpass', freq: 500, q: 0.6, gain: 0.4 * v, buffer: 'brown', dest: this.reverb })
+    for (let i = 0; i < 6; i++) this.noiseBurst({ t: t + 0.3 + Math.random() * 1.1, dur: 0.06 + Math.random() * 0.08, freq: 1500 + Math.random() * 2500, q: 2, gain: 0.08 * v, dest })
+  }
+
+  bulletHit(material = 'stone', dist = 0) {
+    const v = this.near(dist, 25)
+    if (v < 0.02) return
+    const t = this.ctx.currentTime
+    if (material === 'metal') {
+      this.tone({ t, freq: 1800 + Math.random() * 900, dur: 0.18, type: 'triangle', gain: 0.07 * v })
+      this.noiseBurst({ t, dur: 0.03, filter: 'highpass', freq: 3000, gain: 0.12 * v })
+    } else if (material === 'flesh') {
+      this.noiseBurst({ t, dur: 0.06, filter: 'lowpass', freq: 700, gain: 0.18 * v, buffer: 'brown' })
+    } else {
+      this.noiseBurst({ t, dur: 0.05, freq: material === 'wood' ? 1200 : 2400, q: 1.2, gain: 0.1 * v })
+      this.noiseBurst({ t, dur: 0.12, filter: 'lowpass', freq: 400, gain: 0.08 * v, buffer: 'brown' })
+    }
+    if (Math.random() < 0.25 && material !== 'flesh') this.ricochet(dist)
+  }
+
+  ricochet(dist = 0) {
+    const v = this.near(dist, 25)
+    const t = this.ctx.currentTime + 0.01
+    this.tone({ t, freq: 2600 + Math.random() * 1400, dur: 0.28, type: 'sine', gain: 0.05 * v, glideTo: 900 + Math.random() * 500 })
+  }
+
+  bulletWhiz(pan = 0) {
+    const t = this.ctx.currentTime
+    this.noiseBurst({ t, dur: 0.12, freq: 3000, q: 3, gain: 0.08, sweepTo: 1200, dest: this.panned(pan) })
+  }
+
+  reload() {
+    const t = this.ctx.currentTime
+    this.noiseBurst({ t, dur: 0.04, freq: 2200, q: 3, gain: 0.12 })
+    this.tone({ t: t + 0.01, freq: 520, dur: 0.05, type: 'square', gain: 0.03 })
+    this.noiseBurst({ t: t + 0.45, dur: 0.05, freq: 1600, q: 3, gain: 0.14 })
+    this.tone({ t: t + 0.46, freq: 340, dur: 0.06, type: 'square', gain: 0.04 })
+  }
+
+  emptyClick() {
+    const t = this.ctx.currentTime
+    this.noiseBurst({ t, dur: 0.025, freq: 3200, q: 4, gain: 0.1 })
+  }
+
+  casing() {
+    const t = this.ctx.currentTime + 0.25 + Math.random() * 0.1
+    for (let i = 0; i < 2; i++) this.tone({ t: t + i * 0.07, freq: 4200 + Math.random() * 1500, dur: 0.06, type: 'sine', gain: 0.025 })
+  }
+
+  punch(hit = true) {
+    const t = this.ctx.currentTime
+    this.noiseBurst({ t, dur: 0.12, freq: 900, q: 0.8, gain: 0.08, buffer: 'pink', sweepTo: 2200 })
+    if (hit) {
+      this.noiseBurst({ t: t + 0.08, dur: 0.08, filter: 'lowpass', freq: 600, gain: 0.3, buffer: 'brown' })
+      this.tone({ t: t + 0.08, freq: 140, dur: 0.1, gain: 0.2, glideTo: 70 })
+    }
+  }
+
+  hurt() {
+    const t = this.ctx.currentTime
+    const base = 140 + Math.random() * 40
+    const o = this.ctx.createOscillator()
+    o.type = 'sawtooth'
+    o.frequency.setValueAtTime(base * 1.2, t)
+    o.frequency.exponentialRampToValueAtTime(base * 0.8, t + 0.22)
+    const f = this.ctx.createBiquadFilter()
+    f.type = 'bandpass'
+    f.frequency.value = 700
+    f.Q.value = 1.2
+    const g = this.ctx.createGain()
+    g.gain.setValueAtTime(0.0001, t)
+    g.gain.exponentialRampToValueAtTime(0.12, t + 0.02)
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.24)
+    o.connect(f).connect(g).connect(this.out)
+    o.start(t)
+    o.stop(t + 0.3)
+  }
+
+  stinger(good = false) {
+    const t = this.ctx.currentTime
+    const notes = good ? [392, 494, 587, 784] : [330, 311, 277, 233]
+    notes.forEach((f, i) => this.bell(t + i * 0.12, f, 0.13, 1.2))
+  }
 }
+

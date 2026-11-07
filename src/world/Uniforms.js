@@ -29,6 +29,7 @@ export const U = {
   uRoad: c('#d8a27a'),
   uAsphalt: c('#5a5450'),
   uRoadTex: { value: null },
+  uRoadTex2: { value: null },
   uRoadEdge: c('#a8673f'),
   uWaterShallow: c('#5fc7b4'),
   uWaterDeep: c('#1d5b68'),

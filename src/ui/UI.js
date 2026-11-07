@@ -39,6 +39,8 @@ const LOGO = `<svg class="brand-mark" viewBox="0 0 80 80" aria-hidden="true">
   <path d="M24 44V31M24 31c-6 0-9-4-9-9 3 0 5 1 6 3 0-4 1-7 3-9 2 2 3 5 3 9 1-2 3-3 6-3 0 5-3 9-9 9z" fill="#cc3526" stroke="#5a3424" stroke-width="1.5" stroke-linejoin="round"/>
 </svg>`
 
+const clamp01 = (v) => Math.max(0, Math.min(1, v || 0))
+
 export class UI {
   constructor() {
     this.root = document.createElement('div')
@@ -142,9 +144,9 @@ export class UI {
       <div class="panel stamina off" title="Stamina"><i></i></div>
       <div class="toolbar">
         <div class="panel group seasons">
-          <button class="icon-btn" data-season="autumn" data-tip="Autumn (1)" aria-label="Autumn">${ICONS.autumn}</button>
-          <button class="icon-btn" data-season="spring" data-tip="Spring (2)" aria-label="Spring">${ICONS.spring}</button>
-          <button class="icon-btn" data-season="monsoon" data-tip="Monsoon (3)" aria-label="Monsoon">${ICONS.monsoon}</button>
+          <button class="icon-btn" data-season="autumn" data-tip="Autumn (8)" aria-label="Autumn">${ICONS.autumn}</button>
+          <button class="icon-btn" data-season="spring" data-tip="Spring (9)" aria-label="Spring">${ICONS.spring}</button>
+          <button class="icon-btn" data-season="monsoon" data-tip="Monsoon (0)" aria-label="Monsoon">${ICONS.monsoon}</button>
         </div>
         <div class="panel group">
           <button class="icon-btn" data-act="activities" data-tip="Activities (J)" aria-label="Activities">${ICONS.flag}</button>
@@ -162,10 +164,12 @@ export class UI {
           <circle class="value" cx="75" cy="75" r="${R}" stroke-dasharray="0 ${C}" transform="rotate(135 75 75)"/>
           <circle class="rpm" cx="75" cy="75" r="${R - 11}" stroke-dasharray="0 ${C}" transform="rotate(135 75 75)"/>
         </svg>
-        <div class="boost">BOOST</div>
+        <div class="boost">NITRO</div>
+        <div class="nitro-bar"><i></i></div>
         <div class="readout"><div class="kmh">0</div><div class="unit">KM/H</div></div>
         <div class="gear">1</div>
       </div>
+      <div class="speedlines"></div>
       <div class="panel now-playing dim"><div class="disc"></div><div><small>Now playing</small><b class="track">—</b></div></div>
       <div class="toasts"></div>
       <div class="panel hint"></div>`
@@ -178,7 +182,7 @@ export class UI {
       coins: this.el(hud, '.coins'), coinsN: this.el(hud, '.coins .n'), prompt: this.el(hud, '.prompt'), promptKey: this.el(hud, '.p-key'), promptText: this.el(hud, '.p-text'),
       countdown: this.el(hud, '.countdown'), unit: this.el(hud, '.unit'), stamina: this.el(hud, '.stamina'), staminaBar: this.el(hud, '.stamina i'),
       embers: this.el(hud, '.embers'), embersN: this.el(hud, '.embers .n'), embersOf: this.el(hud, '.embers .of'),
-      kmh: this.el(hud, '.kmh'), gear: this.el(hud, '.gear'), value: this.el(hud, '.value'), rpm: this.el(hud, '.rpm'), boost: this.el(hud, '.boost'),
+      kmh: this.el(hud, '.kmh'), gear: this.el(hud, '.gear'), value: this.el(hud, '.value'), rpm: this.el(hud, '.rpm'), boost: this.el(hud, '.boost'), nitro: this.el(hud, '.nitro-bar'), nitroBar: this.el(hud, '.nitro-bar i'), speedlines: this.el(hud, '.speedlines'),
       np: this.el(hud, '.now-playing'), npTrack: this.el(hud, '.now-playing .track'), toasts: this.el(hud, '.toasts'),
       night: this.el(hud, '[data-act="night"]'), music: this.el(hud, '[data-act="music"]'), sound: this.el(hud, '[data-act="sound"]'), camera: this.el(hud, '[data-act="camera"]'),
     }
@@ -259,11 +263,12 @@ export class UI {
         this.dom.rpm.classList.toggle('red', false)
         this.dom.gear.textContent = vp.state === 'off' ? 'OFF' : vp.state === 'starting' ? 'START' : vp.state === 'stopping' ? 'STOP' : `${Math.round(Math.abs(vp.speed) * 3.6)}`
         this.dom.boost.classList.remove('on')
+        this.dom.nitro.classList.add('off')
       } else {
         const kmh = Math.round(Math.abs(vp.speed) * 3.6)
         this.dom.kmh.textContent = kmh
         this.dom.unit.textContent = 'KM/H'
-        const frac = Math.min(kmh / (active.type === 'bike' ? 150 : 120), 1)
+        const frac = Math.min(kmh / (active.type === 'bike' ? 240 : active.type === 'tank' ? 70 : 200), 1)
         this.dom.value.setAttribute('stroke-dasharray', `${C * ARC * frac} ${C}`)
         this.dom.value.style.opacity = frac > 0.01 ? 1 : 0
         const rpmFrac = Math.min(vp.rpm / (vp.cfg.redline + 300), 1)
@@ -271,8 +276,16 @@ export class UI {
         this.dom.rpm.classList.toggle('red', vp.rpm > vp.cfg.upRpm)
         this.dom.gear.textContent = vp.gear === -1 ? 'R' : Math.abs(vp.speed) < 0.3 && vp.throttle < 0.05 ? 'N' : vp.gear
         this.dom.boost.classList.toggle('on', vp.boosting)
+        const hasNitro = !!vp.cfg.nitroTime
+        this.dom.nitro.classList.toggle('off', !hasNitro)
+        if (hasNitro) {
+          this.dom.nitroBar.style.transform = `scaleX(${Math.max(0.02, vp.nitro).toFixed(3)})`
+          this.dom.nitro.classList.toggle('burn', vp.boosting)
+          this.dom.nitro.classList.toggle('empty', vp.nitroLock)
+        }
       }
     }
+    this.dom.speedlines.classList.toggle('on', !!(active && active.phys.boosting && Math.abs(active.phys.speed) > 12))
     // stamina bar: on foot, while sprinting or refilling
     const pl = game.player
     const showStamina = !active && pl && (pl.sprinting || pl.stamina < 0.995)
@@ -281,9 +294,22 @@ export class UI {
       this.dom.staminaBar.style.transform = `scaleX(${Math.max(0.02, pl.stamina).toFixed(3)})`
       this.dom.stamina.classList.toggle('tired', pl.tired)
     }
-    // activity panel
-    const a = game.activities?.current
-    this.dom.act.classList.toggle('hidden', !a)
+    // mission / activity panel
+    const ms = game.missions?.current
+    const a = ms ? null : game.activities?.current
+    this.dom.act.classList.toggle('hidden', !a && !ms)
+    if (ms) {
+      this.dom.actName.textContent = ms.def.name
+      this.dom.actGoal.textContent = ms.label
+      this.dom.actStep.textContent = `${Math.min(ms.i + 1, ms.steps.length)}/${ms.steps.length}`
+      const timed = ms.timer !== null
+      const tl = timed ? Math.max(0, ms.timer) : ms.t
+      this.dom.actTime.textContent = `${Math.floor(tl / 60)}:${String(Math.floor(tl % 60)).padStart(2, '0')}`
+      this.dom.actTime.classList.toggle('late', timed && tl < 10)
+      const prog = ms.progress ?? (timed ? tl / ms.limit : 0)
+      this.dom.actBar.style.width = `${clamp01(prog) * 100}%`
+      this.dom.actCoins.textContent = ms.def.reward
+    }
     if (a) {
       this.dom.actName.textContent = ACTIVITY_INFO[a.id].name
       this.dom.actGoal.textContent = a.label
@@ -304,12 +330,13 @@ export class UI {
     if (mode !== this.hintMode) {
       this.hintMode = mode
       const H = {
-        car: '<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive</span><span><kbd>Space</kbd> drift</span><span><kbd>Shift</kbd> boost</span><span><kbd>F</kbd> get out</span><span><kbd>C</kbd> camera</span><span><kbd>H</kbd> horn</span>',
-        bike: '<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> ride</span><span><kbd>Shift</kbd> boost</span><span><kbd>F</kbd> get off</span><span><kbd>C</kbd> camera</span>',
+        car: '<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive</span><span><kbd>Space</kbd> drift</span><span><kbd>Shift</kbd>/<kbd>X</kbd> nitro</span><span>click drive-by</span><span><kbd>F</kbd> get out</span><span><kbd>H</kbd> horn</span>',
+        bike: '<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> ride</span><span><kbd>Shift</kbd>/<kbd>X</kbd> nitro</span><span><kbd>Space</kbd> brake</span><span>click drive-by</span><span><kbd>F</kbd> get off</span>',
         heli: '<span><kbd>I</kbd> engine</span><span><kbd>Space</kbd>/<kbd>Shift</kbd> up / down</span><span><kbd>W</kbd><kbd>S</kbd> pitch</span><span><kbd>A</kbd><kbd>D</kbd> turn</span><span><kbd>Q</kbd><kbd>E</kbd> strafe</span><span><kbd>F</kbd> get out</span>',
-        foot: '<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</span><span><kbd>Shift</kbd> sprint</span><span><kbd>Space</kbd> jump</span><span><kbd>F</kbd> enter vehicle</span><span>mouse to look</span><span><kbd>C</kbd> camera</span>',
+        foot: '<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</span><span><kbd>Shift</kbd> sprint</span><span><kbd>F</kbd> enter / steal</span><span>click shoot</span><span>right-click aim</span><span><kbd>1</kbd>–<kbd>7</kbd>/<kbd>Tab</kbd> weapons</span><span><kbd>R</kbd> reload</span>',
+        tank: '<span><kbd>W</kbd><kbd>S</kbd> drive</span><span><kbd>A</kbd><kbd>D</kbd> turn</span><span>mouse aim turret</span><span>click fire cannon</span><span>right-click machine gun</span><span><kbd>F</kbd> get out</span>',
       }
-      this.hint.innerHTML = H[mode]
+      this.hint.innerHTML = H[mode] || H.car
       this.hint.classList.remove('dim')
       clearTimeout(this.hintTimer)
       this.hintTimer = setTimeout(() => this.hint.classList.add('dim'), 9000)
@@ -342,7 +369,7 @@ export class UI {
     this.cdTimer = setTimeout(() => el.classList.add('hidden'), n > 0 ? 900 : 700)
   }
 
-  openActivities(acts) {
+  openActivities(acts, missions = null) {
     if (this.modal) return this.closeSettings()
     const wrap = document.createElement('div')
     wrap.className = 'modal-wrap'
@@ -362,6 +389,16 @@ export class UI {
             <button class="chip" data-route="${id}">Show the way</button>
           </div>`).join('')}
         <p class="note">Drive into a glowing marker and press <kbd>G</kbd> to start. Press <kbd>G</kbd> again to quit an activity.</p>
+        ${missions ? `<h3 class="sub">Missions</h3>
+        ${['bike', 'car', 'tank', 'foot'].map((vt) => missions.starts.filter((st) => st.def.vehicle === vt).map((st) => {
+          const m = missions.info(st.id)
+          return `<div class="act-card mission" style="--c:${m.color}">
+            <div class="act-top"><b><span class="mletter" style="background:${m.color}">${m.letter}</span>${m.name}</b><span>${m.done ? '✓ Passed' : `${m.reward} coins`}</span></div>
+            <p>${m.blurb}</p>
+            <div class="mfoot"><small>${m.label}</small><button class="chip" data-mroute="${st.id}">Show the way</button></div>
+          </div>`
+        }).join('')).join('')}
+        <p class="note">Mission markers are lettered by vehicle: <b>B</b> motorbike, <b>C</b> car, <b>T</b> tank, <b>F</b> on foot. Press <kbd>G</kbd> in a marker to start, <kbd>G</kbd> again to give up.</p>` : ''}
       </div>`
     document.body.appendChild(wrap)
     this.modal = wrap
@@ -371,6 +408,45 @@ export class UI {
       this.fire('route', b.dataset.route)
       this.closeSettings()
     }))
+    wrap.querySelectorAll('[data-mroute]').forEach((b) => b.addEventListener('click', () => {
+      this.fire('missionRoute', b.dataset.mroute)
+      this.closeSettings()
+    }))
+  }
+
+  // ------------------------------------------------------------ Gun shop
+  // items: [{ id, name, desc, price }], buy(id) -> coins left or false
+  openShop(title, items, coins, buy) {
+    if (this.modal) return this.closeSettings()
+    const wrap = document.createElement('div')
+    wrap.className = 'modal-wrap'
+    const render = (c) => `
+      <div class="panel modal shop" role="dialog" aria-label="${title}">
+        <h2>${title} <button class="icon-btn" data-close aria-label="Close">${ICONS.close}</button></h2>
+        <div class="coin-total">${ICONS.coin}<b>${c}</b> coins</div>
+        ${items.map((it) => `
+          <div class="act-card shop-item" style="--c:#e8742c">
+            <div class="act-top"><b>${it.name}</b><span>${it.price} coins</span></div>
+            <p>${it.desc}</p>
+            <button class="chip" data-buy="${it.id}" ${c < it.price ? 'disabled' : ''}>Buy</button>
+          </div>`).join('')}
+        <p class="note">Earn coins with activities and missions (<kbd>J</kbd>).</p>
+      </div>`
+    wrap.innerHTML = render(coins)
+    const bind = () => {
+      wrap.querySelector('[data-close]').addEventListener('click', () => this.closeSettings())
+      wrap.querySelectorAll('[data-buy]').forEach((b) => b.addEventListener('click', () => {
+        const left = buy(b.dataset.buy)
+        if (left === false) return
+        wrap.innerHTML = render(left)
+        bind()
+      }))
+    }
+    document.body.appendChild(wrap)
+    this.modal = wrap
+    if (document.pointerLockElement) document.exitPointerLock?.()
+    wrap.addEventListener('click', (e) => { if (e.target === wrap) this.closeSettings() })
+    bind()
   }
 
   // ------------------------------------------------------------ Settings
@@ -412,19 +488,24 @@ export class UI {
         ${this.isTouch ? '' : `<h3>Controls</h3>
         <div class="keys">
           <span><kbd>W</kbd><kbd>S</kbd></span><span>Throttle / brake &amp; reverse (walk on foot)</span>
-          <span><kbd>A</kbd><kbd>D</kbd></span><span>Steer</span>
-          <span><kbd>Space</kbd></span><span>Handbrake drift · jump · helicopter up</span>
-          <span><kbd>Shift</kbd></span><span>Boost · sprint on foot (watch the stamina bar) · helicopter down</span>
-          <span><kbd>F</kbd></span><span>Get in / out of the buggy, bike or helicopter</span>
+          <span><kbd>A</kbd><kbd>D</kbd></span><span>Steer (pivot the tank)</span>
+          <span><kbd>Space</kbd></span><span>Handbrake drift · bike brake · jump · helicopter up</span>
+          <span><kbd>Shift</kbd> / <kbd>X</kbd></span><span>Nitro (blue bar refills) · sprint on foot · helicopter down</span>
+          <span><kbd>F</kbd></span><span>Get in / out · steal a slow car (or a police car)</span>
+          <span>Left click</span><span>Shoot · tank cannon · drive-by with pistol / SMG (or <kbd>Ctrl</kbd>)</span>
+          <span>Right click</span><span>Aim over the shoulder (sniper scope) · tank machine gun</span>
+          <span><kbd>1</kbd>–<kbd>7</kbd></span><span>Fists, pistol, SMG, shotgun, rifle, sniper, rocket launcher</span>
+          <span><kbd>Tab</kbd> / wheel</span><span>Weapon wheel (hold) / cycle weapons</span>
+          <span><kbd>R</kbd></span><span>Reload on foot · reset vehicle when driving</span>
+          <span><kbd>Backspace</kbd></span><span>Back onto the road (on foot)</span>
+          <span><kbd>G</kbd></span><span>Start / quit a mission or activity · Bullseye Arms gun shop</span>
+          <span><kbd>J</kbd></span><span>Missions &amp; activities list</span>
           <span><kbd>I</kbd></span><span>Helicopter engine start / stop</span>
           <span><kbd>Q</kbd><kbd>E</kbd></span><span>Helicopter strafe</span>
-          <span><kbd>G</kbd></span><span>Start / quit an activity at a marker</span>
-          <span><kbd>J</kbd></span><span>Activities list</span>
-          <span>Map</span><span>Click the minimap to enlarge</span>
-          <span><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd></span><span>Autumn / Spring / Monsoon</span>
+          <span>Map</span><span>Click the minimap to see the whole valley</span>
+          <span><kbd>8</kbd><kbd>9</kbd><kbd>0</kbd></span><span>Autumn / Spring / Monsoon</span>
           <span><kbd>N</kbd></span><span>Day / night</span>
           <span><kbd>C</kbd></span><span>Camera</span>
-          <span><kbd>R</kbd></span><span>Reset vehicle</span>
           <span><kbd>M</kbd></span><span>Music on / off</span>
           <span><kbd>H</kbd></span><span>Horn</span>
         </div>`}

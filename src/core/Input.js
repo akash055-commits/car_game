@@ -7,15 +7,54 @@ export class Input {
     this.touch = { steer: 0, throttle: 0, brake: 0, handbrake: false, boost: false, active: false }
     this.listeners = {}
     this.enabled = true
+    // Mouse: buttons held (0 left, 2 right) and the cursor in normalised device coords
+    this.mouse = { 0: false, 1: false, 2: false }
+    this.cursor = { x: 0, y: 0 }
 
     window.addEventListener('keydown', (e) => {
       if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return
-      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault()
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'Tab'].includes(e.code)) e.preventDefault()
       if (!this.keys.has(e.code)) this.emit('press', e.code)
       this.keys.add(e.code)
     })
-    window.addEventListener('keyup', (e) => this.keys.delete(e.code))
-    window.addEventListener('blur', () => this.keys.clear())
+    window.addEventListener('keyup', (e) => {
+      this.keys.delete(e.code)
+      this.emit('release', e.code)
+    })
+    window.addEventListener('blur', () => {
+      this.keys.clear()
+      this.mouse[0] = this.mouse[1] = this.mouse[2] = false
+    })
+  }
+
+  // Mouse buttons + cursor on the game canvas
+  attachMouse(dom) {
+    dom.addEventListener('contextmenu', (e) => e.preventDefault())
+    dom.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'touch' || !this.enabled) return
+      this.mouse[e.button] = true
+      this.emit('mousedown', e.button)
+    })
+    window.addEventListener('pointerup', (e) => {
+      if (e.pointerType === 'touch') return
+      if (this.mouse[e.button]) this.emit('mouseup', e.button)
+      this.mouse[e.button] = false
+    })
+    window.addEventListener('pointermove', (e) => {
+      const r = dom.getBoundingClientRect()
+      this.cursor.x = ((e.clientX - r.left) / r.width) * 2 - 1
+      this.cursor.y = -((e.clientY - r.top) / r.height) * 2 + 1
+      if (document.pointerLockElement) this.emit('look', e.movementX, e.movementY)
+    })
+    dom.addEventListener('wheel', (e) => this.emit('wheel', Math.sign(e.deltaY)), { passive: true })
+  }
+
+  get fire() {
+    return this.enabled && (this.mouse[0] || this.has('ControlLeft', 'ControlRight') || !!this.touch.fire)
+  }
+
+  get aimHeld() {
+    return this.enabled && (this.mouse[2] || !!this.touch.aim)
   }
 
   on(name, fn) {
@@ -36,7 +75,7 @@ export class Input {
     const t = this.touch
     const y = (this.has('KeyW', 'ArrowUp', 'KeyZ') ? 1 : 0) - (this.has('KeyS', 'ArrowDown') ? 1 : 0) + (t.moveY || 0)
     const x = (this.has('KeyD', 'ArrowRight') ? 1 : 0) - (this.has('KeyA', 'ArrowLeft', 'KeyQ') ? 1 : 0) + (t.moveX || 0)
-    return { x: Math.max(-1, Math.min(1, x)), y: Math.max(-1, Math.min(1, y)), sprint: this.has('ShiftLeft', 'ShiftRight') || t.boost, run: !!t.run, jump: this.has('Space') || t.jump }
+    return { x: Math.max(-1, Math.min(1, x)), y: Math.max(-1, Math.min(1, y)), sprint: this.has('ShiftLeft', 'ShiftRight') || t.boost, run: !!t.run, jump: this.has('Space') || t.jump, aim: this.aimHeld }
   }
 
   // Helicopter: Space/Shift collective, W/S pitch, A/D yaw, Q/E bank (strafe)
@@ -65,7 +104,7 @@ export class Input {
       brake: Math.max(down, t.brake),
       steer: Math.max(-1, Math.min(1, left - right + t.steer)),
       handbrake: this.has('Space') || t.handbrake,
-      boost: this.has('ShiftLeft', 'ShiftRight') || t.boost,
+      boost: this.has('ShiftLeft', 'ShiftRight', 'KeyX') || t.boost,
     }
   }
 }

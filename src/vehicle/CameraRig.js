@@ -9,14 +9,19 @@ import { clamp, damp, angleDelta } from '../core/math.js'
 const _v = new THREE.Vector3()
 const _fwd = new THREE.Vector3()
 
-const MODES = { foot: ['third', 'diorama'], car: ['diorama', 'chase'], bike: ['diorama', 'chase'], heli: ['chase', 'diorama'] }
+const MODES = { foot: ['third', 'diorama'], car: ['diorama', 'chase'], bike: ['diorama', 'chase'], heli: ['chase', 'diorama'], tank: ['chase', 'diorama'] }
 
 export class CameraRig {
   constructor(camera, dom, physics) {
     this.camera = camera
     this.physics = physics
     this.dom = dom
-    this.modeIndex = { foot: 0, car: 0, bike: 0, heli: 0 }
+    this.modeIndex = { foot: 0, car: 0, bike: 0, heli: 0, tank: 0 }
+    this.aiming = false // right mouse: tight over-the-shoulder view
+    this.scope = false // sniper scope zoom
+    this.aimK = 0
+    this.fireButton = null // (button) => true when a click should shoot instead of orbiting
+    this.wheelLocked = null // () => true when the wheel cycles weapons
     this.kind = 'car'
     this.azimuth = -2.35
     this.targetAzimuth = this.azimuth
@@ -42,6 +47,8 @@ export class CameraRig {
     let dragging = false, lastX = 0, lastY = 0
     dom.addEventListener('pointerdown', (e) => {
       if (e.pointerType === 'touch') return
+      // in the overhead view a left click shoots at the cursor; drag with the right button to orbit
+      if (this.mode === 'diorama' && this.fireButton?.(e.button)) return
       dragging = true
       lastX = e.clientX
       lastY = e.clientY
@@ -61,6 +68,7 @@ export class CameraRig {
       lastY = e.clientY
     })
     dom.addEventListener('wheel', (e) => {
+      if (this.wheelLocked?.()) return
       if (this.mode === 'diorama') this.targetDistance = clamp(this.targetDistance + e.deltaY * 0.02, 12, 60)
       else this.thirdDist = clamp(this.thirdDist + e.deltaY * 0.004, 2.2, 9)
     }, { passive: true })
@@ -102,6 +110,18 @@ export class CameraRig {
 
   addShake(amount) {
     this.shake = Math.min(1.2, this.shake + amount)
+  }
+
+  // weapon recoil: nudge the view up
+  kick(amount) {
+    if (this.mode === 'diorama') return this.addShake(amount * 0.5)
+    this.pitch = clamp(this.pitch - amount * 0.35, -0.35, 1.1)
+    this.lastLook = this.time
+  }
+
+  // camera ray (screen centre, or the cursor in the overhead view)
+  aimNdc(cursor) {
+    return this.mode === 'diorama' ? cursor : { x: 0, y: this.mode === 'third' ? 0.05 : 0.1 }
   }
 
   snap() {
@@ -190,31 +210,34 @@ export class CameraRig {
       this.lift = damp(this.lift, this.liftTarget, 3.5, dt)
       desired = this.collide(pivot, at(this.elevation + this.lift), target.body, true)
       lookAt = this.focus.clone()
-      fov = 32 + (target.boosting ? 4 : 0)
+      fov = 32 + (target.boosting ? 7 : 0)
     } else if (mode === 'third') {
-      // auto-swing behind the player when walking and the mouse is idle
-      if (speed > 0.5 && this.time - this.lastLook > 1.6) this.yaw += angleDelta(this.yaw, heading) * Math.min(1, dt * 1.2)
-      const pivot = new THREE.Vector3(this.focus.x, this.focus.y + 1.55, this.focus.z)
-      const side = new THREE.Vector3(-Math.cos(this.yaw), 0, Math.sin(this.yaw)).multiplyScalar(0.45) // over the right shoulder
-      const back = new THREE.Vector3(-Math.sin(this.yaw) * Math.cos(this.pitch), Math.sin(this.pitch), -Math.cos(this.yaw) * Math.cos(this.pitch)).multiplyScalar(this.thirdDist)
+      // auto-swing behind the player when walking and the mouse is idle (not while aiming)
+      this.aimK = damp(this.aimK, this.aiming ? 1 : 0, 10, dt)
+      if (!this.aiming && speed > 0.5 && this.time - this.lastLook > 1.6) this.yaw += angleDelta(this.yaw, heading) * Math.min(1, dt * 1.2)
+      const a = this.aimK
+      const pivot = new THREE.Vector3(this.focus.x, this.focus.y + 1.55 + a * 0.05, this.focus.z)
+      const side = new THREE.Vector3(-Math.cos(this.yaw), 0, Math.sin(this.yaw)).multiplyScalar(0.45 + a * 0.2) // over the right shoulder
+      const dist = this.thirdDist * (1 - a) + 1.55 * a
+      const back = new THREE.Vector3(-Math.sin(this.yaw) * Math.cos(this.pitch), Math.sin(this.pitch), -Math.cos(this.yaw) * Math.cos(this.pitch)).multiplyScalar(dist)
       const shoulder = pivot.clone().add(side)
       desired = this.collide(shoulder, shoulder.clone().add(back), target.body)
-      lookAt = shoulder.clone().add(new THREE.Vector3(Math.sin(this.yaw), -Math.sin(this.pitch) * 0.6 + 0.05, Math.cos(this.yaw)).multiplyScalar(4))
-      fov = 55 + clamp(speed / 6, 0, 1) * 5 + (target.boosting ? 6 : 0)
-      stiff = 22
+      lookAt = shoulder.clone().add(new THREE.Vector3(Math.sin(this.yaw) * Math.cos(this.pitch), -Math.sin(this.pitch) * (0.6 + a * 0.4) + 0.05 * (1 - a), Math.cos(this.yaw) * Math.cos(this.pitch)).multiplyScalar(4))
+      fov = (55 + clamp(speed / 6, 0, 1) * 5 + (target.boosting ? 6 : 0)) * (1 - a) + (this.scope ? 13 : 42) * a
+      stiff = 22 + a * 20
     } else {
       // chase: behind the vehicle, mouse can swing it around temporarily
       this.chaseHeading += angleDelta(this.chaseHeading, heading) * (1 - Math.exp(-(this.kind === 'heli' ? 2.5 : 4) * dt))
-      const looking = this.time - this.lastLook < 2.0
+      const looking = this.time - this.lastLook < 2.0 || this.aiming
       if (!looking) this.yaw += angleDelta(this.yaw, this.chaseHeading) * Math.min(1, dt * 3)
       const yaw = looking ? this.yaw : this.chaseHeading
       const heli = this.kind === 'heli'
-      const back = (heli ? 13 : this.kind === 'bike' ? 5.2 : 6.6) + clamp(speed / 30, 0, 1) * 1.5
-      const up = heli ? 4.2 : 2.1 + this.pitch * 2
+      const back = (heli ? 13 : this.kind === 'bike' ? 5.2 : this.kind === 'tank' ? 10 : 6.6) + clamp(speed / 30, 0, 1) * 1.5
+      const up = heli ? 4.2 : (this.kind === 'tank' ? 3.6 : 2.1) + this.pitch * 2
       const pivot = new THREE.Vector3(pos.x, pos.y + (heli ? 2 : 1.2), pos.z)
       desired = this.collide(pivot, new THREE.Vector3(pos.x - Math.sin(yaw) * back, pos.y + up, pos.z - Math.cos(yaw) * back), target.body)
-      lookAt = new THREE.Vector3(pos.x + Math.sin(yaw) * 4, pos.y + (heli ? 1.5 : 1.1), pos.z + Math.cos(yaw) * 4)
-      fov = (heli ? 55 : 58) + clamp(speed / 28, 0, 1) * 8 + (target.boosting ? 6 : 0)
+      lookAt = new THREE.Vector3(pos.x + Math.sin(yaw) * 4, pos.y + (heli ? 1.5 : this.kind === 'tank' ? 2.2 : 1.1) - (this.kind === 'tank' ? this.pitch * 2.5 : 0), pos.z + Math.cos(yaw) * 4)
+      fov = (heli ? 55 : 58) + clamp(speed / 28, 0, 1) * 8 + clamp(speed / 55, 0, 1) * 6 + (target.boosting ? 12 : 0)
       stiff = heli ? 5 : 7
     }
 
@@ -228,6 +251,8 @@ export class CameraRig {
     }
     cam.lookAt(lookAt)
 
+    // Nitro rumble
+    if (target.boosting && this.kind !== 'foot') this.shake = Math.max(this.shake, 0.16 + clamp(speed / 60, 0, 1) * 0.12)
     if (this.shake > 0.001) {
       const s = this.shake * this.shake * 0.5
       const t = performance.now() * 0.05

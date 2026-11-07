@@ -3,19 +3,27 @@
 // taxis and couriers travel between. Buildings are merged into a few draw calls.
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
-import { WORLD, GRID } from './Layout.js'
+import { WORLD } from './Layout.js'
+import { TOWNS } from './Regions.js'
 import { U } from './Uniforms.js'
 import { wettable } from './Props.js'
 import { makeRandom } from '../core/math.js'
+import { TownExtra } from './TownExtra.js'
 
 const HW = WORLD.roadHalfWidth
 const SW = WORLD.sidewalk
 
-export const STREET_NAMES = {
-  x: { '-175': 'West Ring', '-125': 'Cedar Avenue', '-75': 'Oak Avenue', '-25': 'Main Street', 25: 'Maple Avenue', 75: 'Birch Lane', 125: 'Elm Street', 175: 'East Ring' },
-  z: { '-175': 'South Ring', '-125': 'Harbour Road', '-75': 'Willow Road', '-25': 'Market Street', 25: 'Station Road', 75: 'Chestnut Road', 125: 'Hill Street', 175: 'North Ring' },
+export const STREET_NAMES = TOWNS[0].names
+const TOWN_BY_ID = Object.fromEntries(TOWNS.map((t) => [t.id, t]))
+// Gun shops take over the first shop lot of these blocks
+const GUN_LOTS = { '3,4': 0, 'H2,2': 0, 'D1,1': 0, 'P2,1': 1 }
+// Building palettes per town style
+const STYLE = {
+  maple: { walls: null, roofs: null },
+  harbor: { walls: ['#f2d36b', '#7fb3c9', '#e8907a', '#f6efe4', '#9fd0b0', '#d9a3c7', '#f2b880'], roofs: ['#3d4f7a', '#2a5a7a', '#8c3b30', '#46526b'] },
+  chalet: { walls: ['#8a5a3a', '#a06b45', '#7a4b2e', '#b98552', '#c9a27a'], roofs: ['#3f4a3a', '#2f3a2e', '#4a3a2e', '#5b6b7a'] },
+  desert: { walls: ['#e2b98a', '#d8a878', '#f0d2a8', '#c99470', '#e8c49a'], roofs: null },
 }
-
 const HOUSE_WALLS = ['#f2e3c6', '#e8c9a0', '#dcae88', '#c9dcc8', '#b8cfe0', '#f0d0c8', '#e3d6ef', '#f6efe4', '#d8c3a5', '#f1d9a6']
 const ROOFS = ['#b4473a', '#8c3b30', '#5b6b7a', '#3f5a4a', '#7a4b3a', '#a85c3c', '#46526b']
 const SHOP_WALLS = ['#f4e9d8', '#e9d2b4', '#d8e2dc', '#f2c9a5', '#cde0e6', '#efd7d0']
@@ -121,10 +129,30 @@ export class Town {
     this.sitePlots = [] // filled from SITE_PLAN
     this.shopDoors = []
     this.colliders = 0
+    this.piers = []
+    this.hospitals = []
+    this.policeStations = []
+    this.gunShops = []
+    this.sprayShops = []
+    this.batches = {}
+    this.useTown('maple')
 
     this.planBlocks()
+    this.buildFort()
     this.buildStreetLamps()
     this.buildMeshes()
+  }
+
+  // Each town gets its own merged meshes so whole towns can be frustum-culled
+  useTown(id) {
+    if (!this.batches[id]) this.batches[id] = { solid: new Batch(), glass: new Batch() }
+    this.solid = this.batches[id].solid
+    this.glass = this.batches[id].glass
+    this.style = TOWN_BY_ID[id]?.style || 'maple'
+  }
+
+  townName(b) {
+    return TOWN_BY_ID[b.town]?.name || 'Valley'
   }
 
   // building-local matrix helper
@@ -145,10 +173,11 @@ export class Town {
   }
 
   streetFor(block, side) {
-    if (side === 'n') return STREET_NAMES.z[block.z1]
-    if (side === 's') return STREET_NAMES.z[block.z0]
-    if (side === 'e') return STREET_NAMES.x[block.x1]
-    return STREET_NAMES.x[block.x0]
+    const N = TOWN_BY_ID[block.town]?.names || STREET_NAMES
+    if (side === 'n') return N.z[block.z1] || 'Valley Road'
+    if (side === 's') return N.z[block.z0] || 'Valley Road'
+    if (side === 'e') return N.x[block.x1] || 'Valley Road'
+    return N.x[block.x0] || 'Valley Road'
   }
 
   // ---------------------------------------------------------------- planning
@@ -157,7 +186,8 @@ export class Town {
     let shopIndex = 0
     const houseNumbers = {}
     for (const b of L.blocks) {
-      const district = DISTRICTS[b.id] || 'residential'
+      this.useTown(b.town)
+      const district = (b.town === 'maple' ? DISTRICTS[b.id] : TOWN_BY_ID[b.town]?.districts?.[b.id]) || 'residential'
       b.district = district
       const lots = this.lotsFor(b)
       b.lots = lots
@@ -190,7 +220,10 @@ export class Town {
           let name = SHOP_NAMES[shopIndex++ % SHOP_NAMES.length]
           if (b.id === '3,2' && li === 1) name = 'Post Office'
           if (b.id === '1,3' && li === 1) return this.cinema(lot, street)
-          this.shop(lot, name, street)
+          const gun = GUN_LOTS[b.id] === li
+          if (gun) name = 'Bullseye Arms'
+          const place = this.shop(lot, name, street)
+          if (gun) this.markGunShop(place)
         }
       })
       if (district === 'civic') this.buildCivic(b)
@@ -203,12 +236,21 @@ export class Town {
       if (district === 'stunt') this.buildStuntPark(b)
       if (district === 'yard') this.buildYard(b)
       if (district === 'park') this.buildPark(b)
+      if (district === 'docks') this.buildDocks(b)
+      if (district === 'warehouse') this.buildWarehouse(b)
+      if (district === 'clinic') this.buildClinic(b)
+      if (district === 'plaza') this.buildPlaza(b)
+      if (district === 'lodge') this.buildLodge(b)
+      if (district === 'sawmill') this.buildSawmill(b)
+      if (district === 'lookout') this.buildLookout(b)
+      if (district === 'motel') this.buildMotel(b)
+      if (district === 'moto') this.buildMoto(b)
     }
   }
 
   // 8 lots per regular block: 3 facing north, 3 facing south, 1 east, 1 west
   lotsFor(b) {
-    if (['park', 'yard', 'stunt', 'school'].includes(b.district)) return []
+    if (['park', 'yard', 'stunt', 'school', 'docks', 'warehouse', 'plaza', 'sawmill', 'lookout', 'moto', 'motel'].includes(b.district)) return []
     const lots = []
     const W = b.ix1 - b.ix0
     const cx = (b.ix0 + b.ix1) / 2, cz = (b.iz0 + b.iz1) / 2
@@ -277,8 +319,9 @@ export class Town {
     const p = this.local(lot.x, lot.z, lot.rot, 0, lz)
     const y = this.layout.getHeight(p.x, p.z)
     const base = this.baseMatrix(p.x, p.z, lot.rot, y)
-    const wall = r.pick(HOUSE_WALLS)
-    const roof = r.pick(ROOFS)
+    const st = STYLE[this.style] || STYLE.maple
+    const wall = r.pick(st.walls || HOUSE_WALLS)
+    const roof = r.pick(st.roofs || ROOFS)
     this.box(this.solid, base, 0, H / 2 - 0.75, 0, w, H + 1.5, d, wall)
     this.box(this.solid, base, 0, 0.12, 0, w + 0.12, 0.25, d + 0.12, '#8c7d70')
     if (floors === 2) this.box(this.solid, base, 0, 3, 0, w + 0.1, 0.14, d + 0.1, '#f8f1e4')
@@ -289,7 +332,18 @@ export class Town {
       this.windowsRow(base, w, d, 1.65 + f * 3, wall, f === 0 ? doorX : null)
       this.sideWindows(base, w, d, 1.65 + f * 3)
     }
-    if (r.random() < 0.7) {
+    if (this.style === 'desert') {
+      // flat adobe roof with a parapet and a water tank
+      this.box(this.solid, base, 0, H + 0.2, 0, w + 0.3, 0.4, d + 0.3, '#c99470')
+      for (const sx of [-1, 1]) this.box(this.solid, base, sx * (w / 2), H + 0.6, 0, 0.3, 0.5, d + 0.3, wall)
+      if (r.random() < 0.5) this.solid.add(new THREE.CylinderGeometry(0.6, 0.6, 1.2, 10), this.mat(base, w / 4, H + 1.0, -d / 4, 1, 1, 1), '#8c7d70')
+    } else if (this.style === 'chalet') {
+      // steep, deep-eaved roof and a front balcony
+      this.solid.add(prism(w + 1.6, 3.6, d + 1.4), this.mat(base, 0, H, 0, 1, 1, 1, 0, Math.PI / 2), roof)
+      this.box(this.solid, base, 0, Math.min(H, 3) + 0.1, d / 2 + 0.7, w * 0.7, 0.12, 1.3, '#6e4228')
+      this.box(this.solid, base, 0, Math.min(H, 3) + 0.6, d / 2 + 1.3, w * 0.7, 0.8, 0.08, '#6e4228')
+      this.box(this.solid, base, -w * 0.3, H + 2.4, -d * 0.1, 0.7, 2.2, 0.7, '#7a6e66')
+    } else if (r.random() < 0.7) {
       this.solid.add(prism(w + 0.7, 2.3, d + 0.7), this.mat(base, 0, H, 0, 1, 1, 1), roof)
       if (r.random() < 0.6) this.box(this.solid, base, w * 0.25, H + 1.6, -d * 0.15, 0.6, 1.8, 0.6, '#9b8f86')
     } else {
@@ -373,6 +427,7 @@ export class Town {
       const bp = this.local(lot.x, lot.z, lot.rot, -w / 4, lot.d / 2 - 0.7)
       this.benches.push({ x: bp.x, z: bp.z, rot: lot.rot })
     }
+    return place
   }
 
   // ---------------------------------------------------------------- taller buildings
@@ -492,16 +547,18 @@ export class Town {
         this.box(this.solid, base, w / 2 - 2, 9, -d / 4, 3, 11, 3, '#b5553a')
       },
     })
-    this.bigBuilding(b, 's', {
+    const police = this.bigBuilding(b, 's', {
       w: 22, d: 12, floors: 2, wall: '#9fb1c4', name: 'Police',
       extras: (base, w, d) => {
         this.box(this.glass, base, 0, 7.2, d / 2 - 1, 1.2, 0.5, 0.5, '#5a8cff', 1)
       },
     })
+    police.role = 'police'
+    this.policeStations.push(police)
   }
 
   buildHospital(b) {
-    this.bigBuilding(b, 'n', {
+    const place = this.bigBuilding(b, 'n', {
       w: 32, d: 14, floors: 3, wall: '#f2f0ea', name: 'Hospital',
       extras: (base, w, d, H) => {
         this.box(this.glass, base, w / 2 - 4, H - 1.6, d / 2 + 0.1, 2.4, 0.7, 0.08, '#e84a3a', 1)
@@ -510,6 +567,8 @@ export class Town {
         for (const sx of [-3.6, 3.6]) this.box(this.solid, base, sx, 1.45, d / 2 + 4, 0.25, 2.9, 0.25, '#e9e2d6')
       },
     })
+    place.role = 'hospital'
+    this.hospitals.push(place)
   }
 
   buildHotelLibrary(b) {
@@ -624,7 +683,7 @@ export class Town {
     this.box(this.solid, base, 0, 3.4, d / 2 + 0.04, 5.3, 0.9, 0.08, '#3b2a20')
     this.collider(x, y + H / 2, z, w / 2, H / 2 + 0.5, d / 2, 0)
     L.occupy(x, z, 14)
-    this.places.push({ name: 'School', kind: 'landmark', x, z, door: this.local(x, z, 0, 0, d / 2 + 2), rot: 0, street: STREET_NAMES.z[b.z1] })
+    this.places.push({ name: 'School', kind: 'landmark', x, z, door: this.local(x, z, 0, 0, d / 2 + 2), rot: 0, street: this.streetFor(b, 'n') })
     // football pitch in the middle
     const fx = b.cx, fz = b.cz - 4
     this.pitch = { x: fx, z: fz, w: 22, d: 14, y: L.getHeight(fx, fz) }
@@ -667,19 +726,21 @@ export class Town {
     const gbase = this.baseMatrix(gx, gz, Math.PI, gy)
     this.box(this.solid, gbase, 0, 1.75, 0, 10, 5, 6, '#cde0e6')
     for (const dx of [-2.4, 2.4]) this.box(this.solid, gbase, dx, 1.4, 3.04, 3.6, 2.8, 0.1, '#8a8580')
-    this.signs.push({ name: 'Garage', matrix: this.mat(gbase, 0, 3.6, 3.12, 4, 0.6, 1) })
+    this.signs.push({ name: 'Spray & Fix', matrix: this.mat(gbase, 0, 3.6, 3.12, 4, 0.6, 1) })
     this.box(this.solid, gbase, 0, 3.6, 3.06, 4.3, 0.75, 0.08, '#3b2a20')
     this.collider(gx, gy + 2, gz, 5, 2.5, 3, 0)
     L.occupy(x, z, 7)
     L.occupy(gx, gz, 6)
-    this.places.push({ name: 'Garage', kind: 'landmark', x: gx, z: gz, door: { x: x, z: b.iz0 - 0.5 }, rot: Math.PI, street: STREET_NAMES.z[b.z0] })
+    const spray = { name: `Spray & Fix ${this.townName(b)}`, kind: 'landmark', role: 'spray', x: gx, z: gz, door: { x: x, z: b.iz0 - 0.5 }, bay: this.local(gx, gz, Math.PI, 0, 5.5), rot: Math.PI, street: this.streetFor(b, 's') }
+    this.places.push(spray)
+    this.sprayShops.push(spray)
   }
 
   buildStuntPark(b) {
     const L = this.layout
     L.addZone({ type: 'dirt', shape: 'rect', x0: b.ix0 + 1, x1: b.ix1 - 1, z0: b.iz0 + 1, z1: b.iz1 - 1 })
     this.stuntPark = { x0: b.ix0, x1: b.ix1, z0: b.iz0, z1: b.iz1, cx: b.cx, cz: b.cz }
-    this.places.push({ name: 'Stunt Park', kind: 'landmark', x: b.cx, z: b.cz, door: { x: b.cx, z: b.iz0 + 1 }, rot: Math.PI, street: STREET_NAMES.z[b.z0] })
+    this.places.push({ name: 'Stunt Park', kind: 'landmark', x: b.cx, z: b.cz, door: { x: b.cx, z: b.iz0 + 1 }, rot: Math.PI, street: this.streetFor(b, 's') })
   }
 
   buildYard(b) {
@@ -697,7 +758,7 @@ export class Town {
     this.collider(x, y + 3.5, z, 7, 4, 11, 0)
     L.occupy(x, z, 12)
     this.yard = { x0: b.ix0, x1: b.ix1, z0: b.iz0, z1: b.iz1, cx: b.cx, cz: b.cz, pickup: { x: b.ix0 + 30, z: b.cz } }
-    this.places.push({ name: 'Brickyard', kind: 'landmark', x, z, door: { x: b.ix0 + 30, z: b.cz }, rot: Math.PI / 2, street: STREET_NAMES.z[b.z1] })
+    this.places.push({ name: 'Brickyard', kind: 'landmark', x, z, door: { x: b.ix0 + 30, z: b.cz }, rot: Math.PI / 2, street: this.streetFor(b, 'n') })
     // Material piles (decor) in the yard
     this.piles = []
     for (let i = 0; i < 6; i++) {
@@ -757,7 +818,7 @@ export class Town {
     this.box(this.solid, pb, 5, 0.55, 2.0, 0.7, 0.08, 3.4, '#4a7bd0', 0, 0, 0)
     L.addZone({ type: 'dirt', shape: 'circle', x: px + 2, z: pz, r: 6 })
     L.occupy(px + 2, pz, 6)
-    this.places.push({ name: 'Lakeside Park', kind: 'landmark', x: cx, z: cz + lake.r + 9, door: { x: b.ix0 + 1, z: cz }, rot: -Math.PI / 2, street: STREET_NAMES.x[b.x0] })
+    this.places.push({ name: 'Lakeside Park', kind: 'landmark', x: cx, z: cz + lake.r + 9, door: { x: b.ix0 + 1, z: cz }, rot: -Math.PI / 2, street: this.streetFor(b, 'w') })
     this.park = { ...b, playground: { x: px, z: pz } }
   }
 
@@ -766,6 +827,7 @@ export class Town {
     const L = this.layout
     const off = HW + SW - 0.45
     for (const e of L.edges) {
+      if (e.hwy) continue
       const n = Math.floor(e.length / 16)
       for (let k = 1; k < n; k++) {
         const s = (k / n) * e.length
@@ -782,15 +844,21 @@ export class Town {
   }
 
   buildMeshes() {
-    const solidGeo = this.solid.build()
     const mat = wettable(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.82, metalness: 0 }))
-    this.mesh = new THREE.Mesh(solidGeo, mat)
-    this.mesh.castShadow = true
-    this.mesh.receiveShadow = true
-    this.scene.add(this.mesh)
+    this.meshes = []
+    for (const [id, bt] of Object.entries(this.batches)) {
+      const geo = bt.solid.build()
+      if (!geo) continue
+      const m = new THREE.Mesh(geo, mat)
+      m.castShadow = true
+      m.receiveShadow = true
+      m.name = `town-${id}`
+      this.scene.add(m)
+      this.meshes.push(m)
+    }
+    this.mesh = this.meshes[0]
 
     // Windows glow warm at night (randomly per window via aLit)
-    const glassGeo = this.glass.build()
     const gmat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.15, metalness: 0.2, emissive: 0xffffff })
     gmat.onBeforeCompile = (shader) => {
       shader.uniforms.uNight = U.uNight
@@ -801,15 +869,20 @@ export class Town {
         .replace('#include <common>', '#include <common>\nuniform float uNight;\nvarying float vLit;')
         .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance = vec3(1.0, 0.72, 0.38) * vLit * (0.02 + uNight * 2.2);')
     }
-    this.glassMesh = new THREE.Mesh(glassGeo, gmat)
-    this.scene.add(this.glassMesh)
+    for (const bt of Object.values(this.batches)) {
+      const glassGeo = bt.glass.build()
+      if (!glassGeo) continue
+      const gm = new THREE.Mesh(glassGeo, gmat)
+      this.scene.add(gm)
+      this.glassMesh = this.glassMesh || gm
+    }
 
     this.buildSigns()
     this.buildClock()
   }
 
   buildSigns() {
-    const cols = 2, rowsPer = 56
+    const cols = 4, rowsPer = Math.max(1, Math.ceil(this.signs.length / 4))
     const cw = 512, ch = 64
     const cv = document.createElement('canvas')
     cv.width = cw * cols
@@ -900,3 +973,5 @@ export class Town {
     return list[Math.floor(rnd() * list.length)]
   }
 }
+
+Object.assign(Town.prototype, TownExtra)

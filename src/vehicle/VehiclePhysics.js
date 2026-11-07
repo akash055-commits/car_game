@@ -12,9 +12,12 @@ export const CAR = {
     { x: 0.86, y: 0.0, z: -1.12, front: false }, { x: -0.86, y: 0.0, z: -1.12, front: false },
   ],
   chassis: { hx: 0.92, hy: 0.3, hz: 1.78, y: 0.18 }, cabin: { hx: 0.72, hy: 0.32, hz: 0.95, y: 0.78, z: -0.25 },
-  gears: [44, 25, 17.2, 13.4, 11.0], reverse: 40, idle: 900, redline: 6900, upRpm: 6300, downRpm: 2600,
-  torque: 118, drag: 0.3, rolling: 80, brake: 72, steerLow: 0.62, steerHigh: 0.17, steerFade: 30,
+  gears: [42, 24, 15.5, 11.0, 8.0], reverse: 40, idle: 900, redline: 6900, upRpm: 6300, downRpm: 2600,
+  torque: 132, drag: 0.3, rolling: 80, brake: 78, steerLow: 0.62, steerHigh: 0.14, steerFade: 34,
   friction: { front: 2.3, rear: 2.2 }, stiffness: 34, frontShare: 0.35, balance: false, yawAssist: 3.2, downforce: 1.6,
+  // top speed ~140 km/h, ~190 km/h on nitro. Nitro: seconds of burn, seconds to refill, force x, push m/s^2
+  vmax: 39, vmaxNitro: 53, nitroTime: 6, nitroRecharge: 16, nitroForce: 2.1, nitroPush: 3.2,
+  health: 1000, sound: 'car',
 }
 export const BIKE = {
   ...CAR,
@@ -25,9 +28,12 @@ export const BIKE = {
     { x: 0.17, y: 0.0, z: -0.72, front: false }, { x: -0.17, y: 0.0, z: -0.72, front: false },
   ],
   chassis: { hx: 0.24, hy: 0.28, hz: 0.95, y: 0.22 }, cabin: null,
-  gears: [30, 21, 16, 13, 11, 9.8], reverse: 0, idle: 1300, redline: 11000, upRpm: 10200, downRpm: 4800,
-  torque: 44, drag: 0.22, rolling: 30, brake: 22, steerLow: 0.55, steerHigh: 0.12, steerFade: 32,
+  gears: [28, 19.5, 14.8, 11.8, 9.6, 8.05], reverse: 0, idle: 1300, redline: 11000, upRpm: 10200, downRpm: 4800,
+  torque: 48, drag: 0.2, rolling: 30, brake: 24, steerLow: 0.55, steerHigh: 0.1, steerFade: 36,
   friction: { front: 2.4, rear: 2.3 }, stiffness: 42, frontShare: 0, balance: true, yawAssist: 3.6, downforce: 0.6,
+  // top speed ~170 km/h, ~230 km/h on nitro
+  vmax: 47.5, vmaxNitro: 64, nitroTime: 5, nitroRecharge: 14, nitroForce: 2.3, nitroPush: 4.2,
+  health: 600, sound: 'bike',
 }
 
 const _q = new THREE.Quaternion()
@@ -48,6 +54,7 @@ export class VehiclePhysics {
     this.wheelRadius = cfg.wheelRadius
     this.restLength = cfg.restLength
     this.wheelPositions = cfg.wheels.map((w) => ({ ...w }))
+    this.nWheels = this.wheelPositions.length
 
     const bodyDesc = R.RigidBodyDesc.dynamic()
       .setTranslation(spawn.x, spawn.y + 1.2, spawn.z)
@@ -90,12 +97,12 @@ export class VehiclePhysics {
       this.controller.addWheel({ x: w.x, y: w.y, z: w.z }, { x: 0, y: -1, z: 0 }, { x: -1, y: 0, z: 0 }, this.restLength, this.wheelRadius)
     }
     this.baseFriction = { ...cfg.friction }
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < this.nWheels; i++) {
       this.controller.setWheelSuspensionStiffness(i, cfg.stiffness)
       this.controller.setWheelSuspensionCompression(i, 3.2)
       this.controller.setWheelSuspensionRelaxation(i, 2.6)
       this.controller.setWheelMaxSuspensionTravel(i, 0.3)
-      this.controller.setWheelMaxSuspensionForce(i, 60000)
+      this.controller.setWheelMaxSuspensionForce(i, cfg.maxSuspensionForce || 60000)
       this.controller.setWheelFrictionSlip(i, this.wheelPositions[i].front ? this.baseFriction.front : this.baseFriction.rear)
       this.controller.setWheelSideFrictionStiffness(i, 1.0)
     }
@@ -116,9 +123,16 @@ export class VehiclePhysics {
     this.grounded = 0 // wheels in contact
     this.airTime = 0
     this.landing = 0 // impact strength on landing (consumed by fx)
-    this.slip = [0, 0, 0, 0]
-    this.sideSlip = [0, 0, 0, 0] // lateral-only slip (drives the tyre squeal)
-    this.wheelSurface = ['dirt', 'dirt', 'dirt', 'dirt']
+    this.slip = new Array(this.nWheels).fill(0)
+    this.sideSlip = new Array(this.nWheels).fill(0) // lateral-only slip (drives the tyre squeal)
+    this.wheelSurface = new Array(this.nWheels).fill('dirt')
+    // Nitro tank (0..1). Empty -> locked until you let go of the button.
+    this.nitro = 1
+    this.nitroLock = false
+    this.wheelie = 0
+    // Damage
+    this.maxHealth = cfg.health || 1000
+    this.health = this.maxHealth
     this.gripScale = 1
     this.inWater = 0
     this.flippedTime = 0
@@ -139,6 +153,10 @@ export class VehiclePhysics {
     this.rpm = this.cfg.idle
     this.flippedTime = 0
     this.inWater = 0
+  }
+
+  repair() {
+    this.health = this.maxHealth
   }
 
   get position() {
@@ -195,7 +213,14 @@ export class VehiclePhysics {
     this.throttle = damp(this.throttle, throttle, 10, dt)
     this.braking = brake
     this.handbrake = input.handbrake
-    this.boosting = input.boost && throttle > 0 && this.gear > 0
+    // ---- nitro: burns while held, refills slowly; an empty tank locks until released
+    const wantNitro = input.boost && throttle > 0 && this.gear > 0
+    if (!input.boost) this.nitroLock = false
+    this.boosting = wantNitro && !this.nitroLock && this.nitro > 0 && !!cfg.nitroTime
+    if (this.boosting) {
+      this.nitro = Math.max(0, this.nitro - dt / cfg.nitroTime)
+      if (this.nitro <= 0) this.nitroLock = true
+    } else if (cfg.nitroRecharge) this.nitro = Math.min(1, this.nitro + dt / cfg.nitroRecharge)
 
     // ---- gearbox
     const wheelRpm = (absSpeed / (2 * Math.PI * this.wheelRadius)) * 60
@@ -215,7 +240,7 @@ export class VehiclePhysics {
     const ratio = this.wheelRatio()
     // Clutch slip at low speed lets the engine rev above wheel speed
     const coupled = wheelRpm * ratio
-    const slipRpm = cfg.idle + this.throttle * 2600
+    const slipRpm = cfg.idle + this.throttle * (cfg.slipRpm || 2600)
     let targetRpm = Math.max(coupled, lerp(cfg.idle, slipRpm, smoothstep(12, 0, coupled / 100)))
     if (this.grounded === 0) targetRpm = cfg.idle + this.throttle * (cfg.redline - cfg.idle) // free revving in the air
     if (this.shiftTimer > 0) targetRpm = Math.min(targetRpm, this.rpm)
@@ -227,9 +252,19 @@ export class VehiclePhysics {
     if (this.shiftTimer === 0 && this.throttle > 0) {
       const limiter = this.rpm >= cfg.redline - 30 && !this.boosting ? 0.15 : 1
       engineForce = (this.torque(this.rpm) * ratio * 0.88 * this.throttle * limiter) / this.wheelRadius
-      if (this.boosting) engineForce *= 1.55
+      if (this.boosting) engineForce *= cfg.nitroForce || 1.55
       if (this.gear === -1) engineForce = absSpeed > (cfg.kind === 'bike' ? 2.2 : 7) ? 0 : -engineForce
+      // top-speed governor (higher while the nitro burns)
+      const cap = this.boosting ? cfg.vmaxNitro || 60 : cfg.vmax || 60
+      if (this.gear > 0) engineForce *= clamp((cap - forwardSpeed) / 3, 0, 1)
     }
+    // Nitro shove straight along the chassis (only with wheels on the ground)
+    if (this.boosting && this.grounded > 0 && forwardSpeed < (cfg.vmaxNitro || 60)) {
+      const k = (cfg.nitroPush || 0) * cfg.mass * dt
+      this.body.applyImpulse({ x: fwd.x * k, y: 0, z: fwd.z * k }, true)
+    }
+    // Bike: the front wheel lifts on a nitro launch (visual only)
+    this.wheelie = damp(this.wheelie, cfg.kind === 'bike' && this.boosting && absSpeed < 22 && this.grounded > 0 ? 0.32 * (1 - absSpeed / 22) + 0.06 : 0, 4, dt)
     this.load = clamp(Math.abs(engineForce) / 9000, 0, 1)
 
     // Resistance (aero drag + rolling) acts on the body: Rapier ignores a wheel's
@@ -242,19 +277,31 @@ export class VehiclePhysics {
     }
     if (brake > 0) engineForce = 0
 
-    // Rear-biased all-wheel drive (rear wheels uncoupled while the handbrake is on)
-    for (let i = 0; i < 4; i++) {
-      const front = this.wheelPositions[i].front
-      const share = front ? cfg.frontShare : 1 - cfg.frontShare
-      c.setWheelEngineForce(i, input.handbrake && !front ? 0 : (engineForce * share) / 2)
+    // Rear-biased all-wheel drive (rear wheels uncoupled while the handbrake is on).
+    // Tracked vehicles drive every wheel and steer by splitting force left / right.
+    if (cfg.skidSteer) {
+      const per = engineForce / this.nWheels
+      for (let i = 0; i < this.nWheels; i++) {
+        const left = this.wheelPositions[i].x > 0
+        const turn = input.steer * cfg.skidSteer * (left ? -1 : 1)
+        c.setWheelEngineForce(i, per + turn)
+      }
+    } else {
+      const nFront = this.wheelPositions.filter((w) => w.front).length || 1
+      const nRear = this.nWheels - nFront || 1
+      for (let i = 0; i < this.nWheels; i++) {
+        const front = this.wheelPositions[i].front
+        const share = front ? cfg.frontShare / nFront : (1 - cfg.frontShare) / nRear
+        c.setWheelEngineForce(i, input.handbrake && !front ? 0 : engineForce * share)
+      }
     }
 
     // ---- brakes
     const idle = !wantForward && !wantBack && absSpeed < 2.5 ? 6 : 0
     const brakeImpulse = brake * cfg.brake + idle * (cfg.mass / 1000)
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < this.nWheels; i++) {
       const front = this.wheelPositions[i].front
-      let b = brakeImpulse * (front ? 0.6 : 0.4)
+      let b = brakeImpulse * (front ? 0.6 : 0.4) * (4 / this.nWheels)
       if (this.handbrake && !front) b = Math.max(b, 30 * (cfg.mass / 1000))
       c.setWheelBrake(i, b)
     }
@@ -264,12 +311,13 @@ export class VehiclePhysics {
     const targetSteer = input.steer * maxSteer
     const steerRate = Math.abs(targetSteer) < Math.abs(this.steer) ? 10 : 6
     this.steer = damp(this.steer, targetSteer, steerRate, dt)
-    c.setWheelSteering(0, this.steer)
-    c.setWheelSteering(1, this.steer)
+    if (!cfg.skidSteer) {
+      for (let i = 0; i < this.nWheels; i++) if (this.wheelPositions[i].front) c.setWheelSteering(i, this.steer)
+    }
 
     // ---- grip (surface, weather, handbrake drift)
     const wet = env.wet ?? 0
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < this.nWheels; i++) {
       const front = this.wheelPositions[i].front
       const surface = this.wheelSurface[i]
       let grip = front ? this.baseFriction.front : this.baseFriction.rear
@@ -278,14 +326,14 @@ export class VehiclePhysics {
       grip *= 1 - wet * 0.22
       if (!front && this.handbrake) grip *= 0.6
       c.setWheelFrictionSlip(i, grip)
-      c.setWheelSideFrictionStiffness(i, !front && this.handbrake ? 0.75 : 1)
+      c.setWheelSideFrictionStiffness(i, cfg.sideFriction ?? (!front && this.handbrake ? 0.75 : 1))
     }
 
     c.updateVehicle(dt)
 
     // ---- post-update telemetry
     let grounded = 0
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < this.nWheels; i++) {
       if (c.wheelIsInContact(i)) grounded++
       const side = Math.abs(c.wheelSideImpulse(i) || 0)
       const fwdImp = Math.abs(c.wheelForwardImpulse(i) || 0)
@@ -300,7 +348,20 @@ export class VehiclePhysics {
     this.grounded = grounded
 
     // Stability assist: damp excess yaw so slides stay catchable (eased off while drifting)
-    if (grounded >= 3) {
+    if (cfg.skidSteer && grounded >= 2) {
+      // Tracks: pivot turns at a commanded yaw rate (also on the spot)
+      const av = this.body.angvel()
+      const dir = forwardSpeed < -0.5 ? -1 : 1
+      const want = input.steer * (cfg.turnRate || 0.8) * dir * (1 - smoothstep(4, 14, absSpeed) * 0.45)
+      const ny = av.y + (want - av.y) * Math.min(1, 14 * dt)
+      this.body.setAngvel({ x: av.x * (1 - Math.min(1, 3 * dt)), y: ny, z: av.z * (1 - Math.min(1, 3 * dt)) }, true)
+      // tracks don't slide sideways much
+      const lv2 = this.body.linvel()
+      const { right } = this.basis()
+      const side = lv2.x * right.x + lv2.z * right.z
+      const k = Math.min(1, 5 * dt)
+      this.body.setLinvel({ x: lv2.x - right.x * side * k, y: lv2.y, z: lv2.z - right.z * side * k }, true)
+    } else if (grounded >= 3) {
       const av = this.body.angvel()
       const expected = (this.steer * forwardSpeed) / 2.3
       const assist = this.handbrake ? 0.8 : cfg.yawAssist
