@@ -21,6 +21,11 @@ export class Input {
       this.keys.delete(e.code)
       this.emit('release', e.code)
     })
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) return
+      this.keys.clear()
+      this.mouse[0] = this.mouse[1] = this.mouse[2] = false
+    })
     window.addEventListener('blur', () => {
       this.keys.clear()
       this.mouse[0] = this.mouse[1] = this.mouse[2] = false
@@ -41,6 +46,11 @@ export class Input {
       this.mouse[e.button] = false
     })
     window.addEventListener('pointermove', (e) => {
+      // a release we never saw (outside the window, after a shortcut): clear the button
+      if (e.pointerType !== 'touch') {
+        if (!(e.buttons & 1)) this.mouse[0] = false
+        if (!(e.buttons & 2)) this.mouse[2] = false
+      }
       const r = dom.getBoundingClientRect()
       this.cursor.x = ((e.clientX - r.left) / r.width) * 2 - 1
       this.cursor.y = -((e.clientY - r.top) / r.height) * 2 + 1
@@ -50,7 +60,7 @@ export class Input {
   }
 
   get fire() {
-    return this.enabled && (this.mouse[0] || this.has('ControlLeft', 'ControlRight') || !!this.touch.fire)
+    return this.enabled && (this.mouse[0] || !!this.touch.fire)
   }
 
   get aimHeld() {

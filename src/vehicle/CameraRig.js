@@ -47,8 +47,9 @@ export class CameraRig {
     let dragging = false, lastX = 0, lastY = 0
     dom.addEventListener('pointerdown', (e) => {
       if (e.pointerType === 'touch') return
-      // in the overhead view a left click shoots at the cursor; drag with the right button to orbit
+      // overhead view: left-drag orbits; with the right button held (aiming) a left click shoots
       if (this.mode === 'diorama' && this.fireButton?.(e.button)) return
+      if (this.mode === 'diorama' && e.button === 2 && this.rightAims?.()) return
       dragging = true
       lastX = e.clientX
       lastY = e.clientY
@@ -114,7 +115,8 @@ export class CameraRig {
 
   // weapon recoil: nudge the view up
   kick(amount) {
-    if (this.mode === 'diorama') return this.addShake(amount * 0.5)
+    // in the overhead view only the big guns jolt the camera
+    if (this.mode === 'diorama') return amount >= 0.2 ? this.addShake(amount * 0.4) : undefined
     this.pitch = clamp(this.pitch - amount * 0.35, -0.35, 1.1)
     this.lastLook = this.time
   }

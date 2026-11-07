@@ -31,8 +31,8 @@ The live copy lives in [akash055-commits.github.io](https://github.com/akash055-
 | `Shift` or `X` | **Nitro** in the car and on the bike (blue bar, refills; bikes pop a wheelie). Sprint on foot. Helicopter down |
 | `Space` | Handbrake drift, bike brake, jump, helicopter up |
 | `F` (or `E`) | Get in or out. Next to a slow traffic car: **steal it**. Also takes a police car whose crew is out |
-| Left click (or `Ctrl`) | Shoot. Tank cannon. Drive-by from a car or bike (SMG or pistol) |
-| Right click | Aim over the shoulder (scope with the sniper rifle). Tank machine gun |
+| Left click | Shoot (on foot, shoulder camera). Tank cannon. Left-drag looks around |
+| Right click (hold) | Aim (scope with the sniper rifle); while holding it, left click shoots in the overhead view and for drive-bys from a car or bike. Tank machine gun |
 | `1` – `7` | Fists, pistol, SMG, shotgun, assault rifle, sniper rifle, rocket launcher |
 | `Tab` (hold) / mouse wheel | Weapon wheel / cycle weapons |
 | `R` | Reload on foot. Reset your vehicle onto the road when driving |
@@ -46,7 +46,7 @@ The live copy lives in [akash055-commits.github.io](https://github.com/akash055-
 | `C` | Camera style (overhead / chase in vehicles, shoulder / overhead on foot) |
 | `M` | Music on / off |
 | `H` | Horn (people turn round, some grumble) |
-| Mouse drag / wheel | Look / zoom. In the overhead view you aim at the cursor, and right-drag orbits |
+| Mouse drag / wheel | Look / zoom. In the overhead view, hold right click to aim at the cursor |
 | Click the minimap | The whole valley, with towns, hospitals (+), police (P), gun shops (G) and Spray & Fix (S) |
 
 On phones and tablets an on-screen joystick and buttons appear automatically:

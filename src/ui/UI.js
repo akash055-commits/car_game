@@ -330,8 +330,8 @@ export class UI {
     if (mode !== this.hintMode) {
       this.hintMode = mode
       const H = {
-        car: '<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive</span><span><kbd>Space</kbd> drift</span><span><kbd>Shift</kbd>/<kbd>X</kbd> nitro</span><span>click drive-by</span><span><kbd>F</kbd> get out</span><span><kbd>H</kbd> horn</span>',
-        bike: '<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> ride</span><span><kbd>Shift</kbd>/<kbd>X</kbd> nitro</span><span><kbd>Space</kbd> brake</span><span>click drive-by</span><span><kbd>F</kbd> get off</span>',
+        car: '<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive</span><span><kbd>Space</kbd> drift</span><span><kbd>Shift</kbd>/<kbd>X</kbd> nitro</span><span>right-hold + click drive-by</span><span><kbd>F</kbd> get out</span><span><kbd>H</kbd> horn</span>',
+        bike: '<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> ride</span><span><kbd>Shift</kbd>/<kbd>X</kbd> nitro</span><span><kbd>Space</kbd> brake</span><span>right-hold + click drive-by</span><span><kbd>F</kbd> get off</span>',
         heli: '<span><kbd>I</kbd> engine</span><span><kbd>Space</kbd>/<kbd>Shift</kbd> up / down</span><span><kbd>W</kbd><kbd>S</kbd> pitch</span><span><kbd>A</kbd><kbd>D</kbd> turn</span><span><kbd>Q</kbd><kbd>E</kbd> strafe</span><span><kbd>F</kbd> get out</span>',
         foot: '<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</span><span><kbd>Shift</kbd> sprint</span><span><kbd>F</kbd> enter / steal</span><span>click shoot</span><span>right-click aim</span><span><kbd>1</kbd>–<kbd>7</kbd>/<kbd>Tab</kbd> weapons</span><span><kbd>R</kbd> reload</span>',
         tank: '<span><kbd>W</kbd><kbd>S</kbd> drive</span><span><kbd>A</kbd><kbd>D</kbd> turn</span><span>mouse aim turret</span><span>click fire cannon</span><span>right-click machine gun</span><span><kbd>F</kbd> get out</span>',
@@ -492,8 +492,8 @@ export class UI {
           <span><kbd>Space</kbd></span><span>Handbrake drift · bike brake · jump · helicopter up</span>
           <span><kbd>Shift</kbd> / <kbd>X</kbd></span><span>Nitro (blue bar refills) · sprint on foot · helicopter down</span>
           <span><kbd>F</kbd></span><span>Get in / out · steal a slow car (or a police car)</span>
-          <span>Left click</span><span>Shoot · tank cannon · drive-by with pistol / SMG (or <kbd>Ctrl</kbd>)</span>
-          <span>Right click</span><span>Aim over the shoulder (sniper scope) · tank machine gun</span>
+          <span>Left click</span><span>Shoot (shoulder camera) · tank cannon · left-drag looks around</span>
+          <span>Right click</span><span>Hold to aim (sniper scope) · then click to shoot in the overhead view or from a car / bike · tank machine gun</span>
           <span><kbd>1</kbd>–<kbd>7</kbd></span><span>Fists, pistol, SMG, shotgun, rifle, sniper, rocket launcher</span>
           <span><kbd>Tab</kbd> / wheel</span><span>Weapon wheel (hold) / cycle weapons</span>
           <span><kbd>R</kbd></span><span>Reload on foot · reset vehicle when driving</span>
