@@ -234,6 +234,7 @@ export class Traffic {
     c.state = 'wrecked'
     c.health = 0
     c.timer = 0
+    c.settled = false
     if (!c.driver.ejected) c.driver.visible = false
     c.mesh.material = burntMaterial()
     c.body.setBodyType(R.RigidBodyType.Dynamic, true)
@@ -307,6 +308,8 @@ export class Traffic {
         if (c.timer > 4.5) this.emit('explode', c)
       } else if (c.state === 'wrecked') {
         this.runDriver(c, dt)
+        // once it has landed, let the wreck settle instead of shuffling about
+        if (c.timer > 3 && !c.settled) { c.settled = true; c.body.setLinearDamping(3); c.body.setAngularDamping(3) }
         c.timer += dt
         c.burning = c.timer < 18
         if (c.timer > 30 && (!player || (c.pos.x - player.x) ** 2 + (c.pos.z - player.z) ** 2 > 90 * 90)) this.respawn(c, player)

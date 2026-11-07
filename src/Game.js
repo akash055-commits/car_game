@@ -286,7 +286,8 @@ export class Game {
           this.wanted.crime('copHit', this.carPos, true)
         }
       }
-      this.emit('impact', { force, strength: isCar ? strength : clamp(force / 8000, 0, 1), material: other?.material || 'ground', withCar: isCar, kind: other?.kind })
+      const impactStrength = isCar ? strength : clamp(force / 8000, 0, 1) * clamp((closing - 1.5) / 6, 0, 1)
+      if (impactStrength > 0.03) this.emit('impact', { force, strength: impactStrength, material: other?.material || 'ground', withCar: isCar, kind: other?.kind })
     }
     this.wireCombat()
     this.wirePolice()
